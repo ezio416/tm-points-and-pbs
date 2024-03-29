@@ -23,16 +23,16 @@ string MakeColorsOkayDarkMode(const string &in raw) {
         if (ret[i] == asciiDollarSign) {
             _test = ret.SubStr(i, 4);
             if (IsCharHex(_test[1]) && IsCharHex(_test[2]) && IsCharHex(_test[3])) {
-                auto c = Color(vec3(
+                Color@ c = Color(vec3(
                     float(HexCharToInt(_test[1])) / 15.,
                     float(HexCharToInt(_test[2])) / 15.,
                     float(HexCharToInt(_test[3])) / 15.
                 ));
                 c.AsHSL();
-                float l = c.v.z;  /* lightness part of HSL */
+                float l = c.v.z;  // lightness part of HSL
                 if (l < 60) {
                     // logcall("MakeColorsOkayDarkMode", "fixing color: " + _test + " / " + c.ManiaColor + " / " + c.ToString());
-                    c.v = vec3(c.v.x, c.v.y, Math::Max(100. - l, 60));
+                    c.v = vec3(c.v.x, c.v.y, Math::Max(100.0f - l, 60));
                     // logcall("MakeColorsOkayDarkMode", "new color: " + Vec3ToStr(c.get_rgb()) + " / " + c.ManiaColor + " / " + c.ToString());
                     ret = ret.Replace(_test, c.ManiaColor);
                 }
@@ -48,8 +48,8 @@ bool IsCharInt(int char) {
 }
 
 bool IsCharInAToF(int char) {
-    return (97 <= char && char <= 102) /* lower case */
-        || (65 <= char && char <= 70); /* upper case */
+    return (97 <= char && char <= 102)  // lower case
+        || (65 <= char && char <= 70);  // upper case
 }
 
 bool IsCharHex(int char) {
@@ -60,11 +60,13 @@ uint8 HexCharToInt(int char) {
     if (IsCharInt(char)) {
         return char - 48;
     }
+
     if (IsCharInAToF(char)) {
         int v = char - 65 + 10;  // A = 65 ascii
         if (v < 16) return v;
         return v - (97 - 65);    // a = 97 ascii
     }
+
     throw("HexCharToInt got char with code " + char + " but that isn't 0-9 or a-f or A-F in ascii.");
     return 0;
 }
@@ -89,8 +91,8 @@ string ColorTyStr(ColorTy ty) {
         case ColorTy::LAB: return "LAB";
         case ColorTy::XYZ: return "XYZ";
         case ColorTy::HSL: return "HSL";
+        default:           return "UNK";
     }
-    return "UNK";
 }
 
 string F3(float v) {
@@ -106,12 +108,12 @@ vec4 vec3To4(vec3 v, float w) {
 }
 
 vec3 rgbToXYZ(vec3 v) {
-    float r = v.x <= 0.04045 ? (v.x / 12.92) : Math::Pow((v.x + 0.055) / 1.055, 2.4);
-    float g = v.y <= 0.04045 ? (v.y / 12.92) : Math::Pow((v.y + 0.055) / 1.055, 2.4);
-    float b = v.z <= 0.04045 ? (v.z / 12.92) : Math::Pow((v.z + 0.055) / 1.055, 2.4);
-    return vec3(r * 0.4124 + g * 0.3576 + b * 0.1805,
-                r * 0.2126 + g * 0.7152 + b * 0.0722,
-                r * 0.0193 + g * 0.1192 + b * 0.9505) * 100;
+    float r = v.x <= 0.04045f ? (v.x / 12.92f) : Math::Pow((v.x + 0.055f) / 1.055f, 2.4f);
+    float g = v.y <= 0.04045f ? (v.y / 12.92f) : Math::Pow((v.y + 0.055f) / 1.055f, 2.4f);
+    float b = v.z <= 0.04045f ? (v.z / 12.92f) : Math::Pow((v.z + 0.055f) / 1.055f, 2.4f);
+    return vec3(r * 0.4124f + g * 0.3576f + b * 0.1805f,
+                r * 0.2126f + g * 0.7152f + b * 0.0722f,
+                r * 0.0193f + g * 0.1192f + b * 0.9505f) * 100;
 }
 
 vec3 xyzToRGB(vec3 xyz) {
@@ -221,7 +223,7 @@ uint8 ToSingleHexCol(float v) {
 }
 
 string rgbToHexTri(vec3 rgb) {
-    auto v = rgb * 15;
+    vec3 v = rgb * 15;
     string ret = "000";
     ret[0] = ToSingleHexCol(v.x);
     ret[1] = ToSingleHexCol(v.y);
@@ -255,7 +257,7 @@ class Color {
     }
 
     vec4 rgba(float a) {
-        auto _v = this.rgb;
+        vec3 _v = this.rgb;
         return vec4(_v.x, _v.y, _v.z, a);
     }
 
@@ -304,25 +306,25 @@ class Color {
     }
 
     Color@ ToLAB() {
-        auto ret = Color(v, this.ty);
+        Color@ ret = Color(v, this.ty);
         ret.AsLAB();
         return ret;
     }
 
     Color@ ToXYZ() {
-        auto ret = Color(v, this.ty);
+        Color@ ret = Color(v, this.ty);
         ret.AsXYZ();
         return ret;
     }
 
     Color@ ToRGB() {
-        auto ret = Color(v, this.ty);
+        Color@ ret = Color(v, this.ty);
         ret.AsRGB();
         return ret;
     }
 
     Color@ ToHSL() {
-        auto ret = Color(v, this.ty);
+        Color@ ret = Color(v, this.ty);
         ret.AsHSL();
         return ret;
     }

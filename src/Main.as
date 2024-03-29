@@ -23,9 +23,9 @@ bool get_PermissionsOkay() {
 
 void NotifyMissingPermissions() {
     UI::ShowNotification(
-        Meta::ExecutingPlugin().Name,
+        title,
         "Missing permissions! D:\nYou probably don't have permission to view records/PBs.\nThis plugin won't do anything.",
-        vec4(1, .4, .1, .3),
+        vec4(1.0f, 0.4f, 0.1f, 0.3f),
         10000
     );
     warn("Missing permissions! D:\nYou probably don't have permission to view records/PBs.\nThis plugin won't do anything.");
@@ -37,11 +37,14 @@ void MainLoop() {
     // when playground goes null, reset
     while (PermissionsOkay) {
         yield();
+
         if (PlaygroundNotNullAndEditorNull && S_ShowWindow) {
             startnew(UpdateRecords);
             lastPbUpdate = Time::Now; // set this here to avoid triggering immediately
+
             while (PlaygroundNotNullAndEditorNull && S_ShowWindow) {
                 yield();
+
                 if (g_PlayersInServerLast != GetPlayersInServerCount() || lastPbUpdate + 60000 < Time::Now) {
                     g_PlayersInServerLast = GetPlayersInServerCount();
                     startnew(UpdateRecords);
@@ -50,7 +53,7 @@ void MainLoop() {
             }
             g_Records.RemoveRange(0, g_Records.Length);
         }
-        // wait while playground is null or we aren't showing the window
+
         while (!PlaygroundNotNullAndEditorNull || !S_ShowWindow) yield();
     }
 }
@@ -72,8 +75,9 @@ void Update(float) {
 
 void UpdateRecords() {
     lastPbUpdate = Time::Now;
-    auto newPBs = GetPlayersPBs();
-    if (newPBs.Length > 0) // empty arrays are returned on e.g., http error
+    PBTime@[] newPBs = GetPlayersPBs();
+
+    if (newPBs.Length > 0)  // empty arrays are returned on e.g., http error
         g_Records = newPBs;
 }
 
@@ -82,25 +86,29 @@ uint get_LocalPlayersRank() {
     // once per frame
     if (lastLPR_Time + 5 > Time::Now)
         return lastLPR_Rank;
+
     // otherwise update
     lastLPR_Time = Time::Now;
     lastLPR_Rank = g_Records.Length;
+
     for (uint i = 0; i < g_Records.Length; i++) {
         if (g_Records[i].isLocalPlayer) {
             lastLPR_Rank = i + 1;
             break;
         }
     }
+
     return lastLPR_Rank;
 }
 
-/* GET INFO FROM GAME */
-
 uint GetPlayersInServerCount() {
-    auto cp = cast<CTrackMania>(GetApp()).CurrentPlayground;
-    if (cp is null)
+    CTrackMania@ App = cast<CTrackMania@>(GetApp());
+
+    CSmArenaClient@ Playground = cast<CSmArenaClient@>(App.CurrentPlayground);
+    if (Playground is null)
         return 0;
-    return cp.Players.Length;
+
+    return Playground.Players.Length;
 }
 
 string GetLocalPlayerWSID() {
@@ -111,47 +119,56 @@ string GetLocalPlayerWSID() {
     }
 }
 
-// array<CGamePlayer@>@ GetPlayersInServer() {
-array<CSmPlayer@>@ GetPlayersInServer() {
-    auto cp = cast<CTrackMania>(GetApp()).CurrentPlayground;
-    if (cp is null)
+CSmPlayer@[]@ GetPlayersInServer() {
+    CTrackMania@ App = cast<CTrackMania@>(GetApp());
+
+    CSmArenaClient@ Playground = cast<CSmArenaClient@>(App.CurrentPlayground);
+    if (Playground is null)
         return {};
-    array<CSmPlayer@> ret;
-    for (uint i = 0; i < cp.Players.Length; i++) {
-        auto player = cast<CSmPlayer>(cp.Players[i]);
-        if (player !is null)
-            ret.InsertLast(player);
+
+    CSmPlayer@[] ret;
+
+    for (uint i = 0; i < Playground.Players.Length; i++) {
+        CSmPlayer@ Player = cast<CSmPlayer@>(Playground.Players[i]);
+        if (Player !is null)
+            ret.InsertLast(Player);
     }
+
     return ret;
 }
 
 // Returns a sorted list of player PB time objects. This is assumed to be called only from UpdateRecords().
-array<PBTime@> GetPlayersPBs() {
-    auto mapg = cast<CTrackMania>(GetApp()).Network.ClientManiaAppPlayground;
-    if (mapg is null)
+PBTime@[] GetPlayersPBs() {
+    CTrackMania@ App = cast<CTrackMania@>(GetApp());
+    CTrackManiaNetwork@ Network = cast<CTrackManiaNetwork@>(App.Network);
+
+    CGameManiaAppPlayground@ CMAP = Network.ClientManiaAppPlayground;
+    if (CMAP is null)
         return {};
-    auto scoreMgr = mapg.ScoreMgr;
-    auto userMgr = mapg.UserMgr;
-    if (scoreMgr is null || userMgr is null)
+
+    if (CMAP.ScoreMgr is null || CMAP.UserMgr is null)
         return {};
-    auto players = GetPlayersInServer();
-    if (players.Length == 0)
+
+    CSmPlayer@[]@ players = GetPlayersInServer();
+    if (players is null || players.Length == 0)
         return {};
-    auto playerWSIDs = MwFastBuffer<wstring>();
+
+    MwFastBuffer<wstring> playerWSIDs = MwFastBuffer<wstring>();
     dictionary wsidToPlayer;
+
     for (uint i = 0; i < players.Length; i++) {
         playerWSIDs.Add(players[i].User.WebServicesUserId);
         @wsidToPlayer[players[i].User.WebServicesUserId] = players[i];
     }
 
     g_CurrentlyLoadingRecords = true;
-    auto rl = scoreMgr.Map_GetPlayerListRecordList(userMgr.Users[0].Id, playerWSIDs, GetApp().RootMap.MapInfo.MapUid, "PersonalBest", "", "", "");
-    while (rl.IsProcessing)
+    CWebServicesTaskResult_MapRecordListScript@ task = CMAP.ScoreMgr.Map_GetPlayerListRecordList(CMAP.UserMgr.Users[0].Id, playerWSIDs, GetApp().RootMap.MapInfo.MapUid, "PersonalBest", "", "", "");
+    while (task.IsProcessing)
         yield();
     g_CurrentlyLoadingRecords = false;
 
-    if (rl.HasFailed || !rl.HasSucceeded) {
-        warn("Requesting records failed. Type,Code,Desc: " + rl.ErrorType + ", " + rl.ErrorCode + ", " + rl.ErrorDescription);
+    if (task.HasFailed || !task.HasSucceeded) {
+        warn("Requesting records failed. Type,Code,Desc: " + task.ErrorType + ", " + task.ErrorCode + ", " + task.ErrorDescription);
         return {};
     }
 
@@ -161,25 +178,27 @@ array<PBTime@> GetPlayersPBs() {
        so we use a dictionary to look up the players (wsidToPlayer we set up earlier)
     */
 
-    string localWSID = GetLocalPlayerWSID();
+    const string localWSID = GetLocalPlayerWSID();
 
-    array<PBTime@> ret;
-    for (uint i = 0; i < rl.MapRecordList.Length; i++) {
-        auto rec = rl.MapRecordList[i];
-        auto _p = cast<CSmPlayer>(wsidToPlayer[rec.WebServicesUserId]);
+    PBTime@[] ret;
+    for (uint i = 0; i < task.MapRecordList.Length; i++) {
+        CMapRecord@ Record = task.MapRecordList[i];
+        CSmPlayer@ _p = cast<CSmPlayer@>(wsidToPlayer[Record.WebServicesUserId]);
         if (_p is null) {
             warn("Failed to lookup player from temp dict");
             continue;
         }
-        ret.InsertLast(PBTime(_p, rec, rec.WebServicesUserId == localWSID));
+        ret.InsertLast(PBTime(_p, Record, Record.WebServicesUserId == localWSID));
         // remove the player so we can quickly get all players in server that don't have records
-        wsidToPlayer.Delete(rec.WebServicesUserId);
+        wsidToPlayer.Delete(Record.WebServicesUserId);
     }
-    // get pbs for players without pbs
-    auto playersWOutRecs = wsidToPlayer.GetKeys();
-    for (uint i = 0; i < playersWOutRecs.Length; i++) {
-        auto wsid = playersWOutRecs[i];
-        auto player = cast<CSmPlayer>(wsidToPlayer[wsid]);
+
+    string[]@ playersWithoutPB = wsidToPlayer.GetKeys();
+
+    for (uint i = 0; i < playersWithoutPB.Length; i++) {
+        string wsid = playersWithoutPB[i];
+        CSmPlayer@ player = cast<CSmPlayer@>(wsidToPlayer[wsid]);
+
         try {
             // sometimes we get a null pointer exception here on player.User.WebServicesUserId
             ret.InsertLast(PBTime(player, null));
@@ -188,7 +207,9 @@ array<PBTime@> GetPlayersPBs() {
             startnew(RetryRecordsSoon);
         }
     }
+
     ret.SortAsc();
+
     return ret;
 }
 
@@ -209,10 +230,11 @@ class PBTime {
     string wsid;
 
     PBTime(CSmPlayer@ _player, CMapRecord@ _rec, bool _isLocalPlayer = false) {
-        wsid = _player.User.WebServicesUserId; // rare null pointer exception here? `[        Platform] [11:24:26] [players-pbs-dev]  Invalid address for member ID 03002000. This is likely a Nadeo bug! Setting it to null!`
+        wsid = _player.User.WebServicesUserId;  // rare null pointer exception here? `Invalid address for member ID 03002000. This is likely a Nadeo bug! Setting it to null!`
         name = _player.User.Name;
         club = _player.User.ClubTag;
         isLocalPlayer = _isLocalPlayer;
+
         if (_rec !is null) {
             time = _rec.Time;
             replayUrl = _rec.ReplayUrl;
@@ -222,6 +244,7 @@ class PBTime {
             replayUrl = "";
             recordTs = 0;
         }
+
         UpdateCachedStrings();
     }
 
@@ -232,25 +255,31 @@ class PBTime {
 
     int opCmp(PBTime@ other) const {
         if (time == 0)
-            return (other.time == 0 ? 0 : 1); // one or both PB unset
+            return (other.time == 0 ? 0 : 1);  // one or both PB unset
+
         if (other.time == 0 || time < other.time)
             return -1;
+
         if (time == other.time)
             return 0;
+
         return 1;
     }
 }
 
 void CheckMLFeedForBetterTimes() {
-    auto raceData = MLFeed::GetRaceData();
+    const MLFeed::RaceDataProxy@ raceData = MLFeed::GetRaceData();
+    if (raceData is null)
+        return;
+
     bool foundBetter = false;
     for (uint i = 0; i < g_Records.Length; i++) {
-        auto pbTime = g_Records[i];
-        auto player = raceData.GetPlayer(pbTime.name);
-        if (player is null)
+        PBTime@ pbTime = g_Records[i];
+
+        const MLFeed::PlayerCpInfo@ player = raceData.GetPlayer(pbTime.name);
+        if (player is null || player.bestTime < 1)
             continue;
-        if (player.bestTime < 1)
-            continue;
+
         if (player.bestTime < int(pbTime.time) || pbTime.time < 1) {
             pbTime.time = player.bestTime;
             pbTime.recordTs = Time::Stamp;
@@ -267,13 +296,16 @@ void CheckMLFeedForBetterTimes() {
 UI::InputBlocking OnKeyPress(bool down, VirtualKey key) {
     if (!down || !S_HotkeyEnabled)
         return UI::InputBlocking::DoNothing;
+
     if (key == S_Hotkey) {
         if (!PlaygroundNotNullAndEditorNull || SoloModeExitCheck())
             return UI::InputBlocking::DoNothing;
+
         S_ShowWindow = !S_ShowWindow;
         UI::ShowNotification(Meta::ExecutingPlugin().Name, "Toggled visibility", vec4(0.1, 0.4, 0.8, 0.4));
         return UI::InputBlocking::Block;
     }
+
     return UI::InputBlocking::DoNothing;
 }
 
@@ -323,7 +355,7 @@ void DrawUI() {
                 // refresh/loading    #N Players: 22    Your Rank: 19 / 22
                 if (!S_HideTopInfo) {
                     UI::AlignTextToFramePadding();
-                    auto curPos1 = UI::GetCursorPos();
+                    vec2 curPos1 = UI::GetCursorPos();
                     if (g_CurrentlyLoadingRecords)
                         UI::Text("Updating...");
                     else {
@@ -332,7 +364,7 @@ void DrawUI() {
                     }
                     UI::SameLine();
                     UI::SetCursorPos(curPos1 + vec2(80, 0));
-                    auto nbPlayers = GetPlayersInServerCount();
+                    uint nbPlayers = GetPlayersInServerCount();
                     UI::Text("Your Rank: " + LocalPlayersRank + " / " + nbPlayers);
                     if (S_TopInfoMapName) {
                         UI::SameLine();
@@ -363,19 +395,16 @@ void DrawUI() {
                         UI::TableHeadersRow();
 
                         UI::ListClipper clip(g_Records.Length);
-                        while(clip.Step()) {
+                        while (clip.Step()) {
                             for (int i = clip.DisplayStart; i < clip.DisplayEnd; i++) {
-                                auto pb = g_Records[i];
+                                PBTime@ pb = g_Records[i];
                                 UI::TableNextRow();
 
                                 // highlight if updated -- note: record timestamps can appear in the future, so we just clamp and wait. // pb.recordTs <= Time::Stamp
                                 bool shouldHighlight = S_ShowRecentPBsInGreen && pb.recordTs + 60 > uint(Time::Stamp);
                                 if (shouldHighlight) {
-                                    float hlAmount = 1. - Math::Clamp(float(int(Time::Stamp) - int(pb.recordTs)) / 60., 0., 1.);
-                                    UI::PushStyleColor(UI::Col::Text, vec4(.3, .9, .1, 1) * hlAmount + vec4(1, 1, 1, 1) * (1. - hlAmount));
-                                    // if (int(Time::Stamp) - int(pb.recordTs) < 0) {
-                                    //     trace('future timestamp: ' + (int(Time::Stamp) - int(pb.recordTs)));
-                                    // }
+                                    const float hlAmount = 1.0f - Math::Clamp(float(int(Time::Stamp) - int(pb.recordTs)) / 60.0f, 0.0f, 1.0f);
+                                    UI::PushStyleColor(UI::Col::Text, vec4(0.3f, 0.9f, 0.1f, 1.0f) * hlAmount + vec4(1.0f, 1.0f, 1.0f, 1.0f) * (1.0f - hlAmount));
                                 }
 
                                 UI::TableNextColumn();
