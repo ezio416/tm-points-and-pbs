@@ -14,7 +14,7 @@ bool S_ShowInSoloMode = false;
 bool S_Headers = true;
 
 [Setting category="General" name="Show club tags" description="slight performance impact"]
-bool S_Clubs = false;
+bool S_Clubs = true;
 
 [Setting category="General" name="Icon size" min=1.0f max=100.0f]
 float S_IconSize = 20.0f;
@@ -23,10 +23,10 @@ float S_IconSize = 20.0f;
 bool S_Medals = true;
 
 [Setting category="General" name="Show PB dates"]
-bool S_Dates = false;
+bool S_Dates = true;
 
 [Setting category="General" name="Show session PB"]
-bool S_SessionPB = false;
+bool S_SessionPB = true;
 
 [Setting category="General" name="Highlight Recent PBs?" description="highlights PBs set within the last minute"]
 bool S_HIghlightRecent = true;
