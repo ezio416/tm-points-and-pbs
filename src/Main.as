@@ -3,10 +3,10 @@
 
 bool         g_CurrentlyLoadingRecords = false;
 uint         g_PlayersInServerLast     = 0;
-PBTime@[]    g_Records;
 uint         lastLPR_Rank              = 0;
 uint         lastLPR_Time              = 0;
 uint         lastPbUpdate              = 0;
+PBTime@[]    records;
 const string title                     = "\\$4C4" + Icons::ListOl + "\\$G Points And PBs";
 
 void Main() {
@@ -15,7 +15,32 @@ void Main() {
         return;
     }
 
-    startnew(MainLoop);
+    // when current playground becomes not-null, get records
+    // when player count changes, get records
+    // when playground goes null, reset
+    while (GetPermissionsOkay()) {
+        yield();
+
+        if (GetPlaygroundValidAndEditorNull() && S_Enabled) {
+            startnew(UpdateRecords);
+            lastPbUpdate = Time::Now;  // set this here to avoid triggering immediately
+
+            while (GetPlaygroundValidAndEditorNull() && S_Enabled) {
+                yield();
+
+                if (g_PlayersInServerLast != GetPlayersInServerCount() || lastPbUpdate + 60000 < Time::Now) {
+                    g_PlayersInServerLast = GetPlayersInServerCount();
+                    startnew(UpdateRecords);
+                    lastPbUpdate = Time::Now;  // bc we start it in a coro; don't want to run twice
+                }
+            }
+
+            records = {};
+        }
+
+        while (!GetPlaygroundValidAndEditorNull() || !S_Enabled)
+            yield();
+    }
 }
 
 UI::InputBlocking OnKeyPress(bool down, VirtualKey key) {
@@ -26,7 +51,7 @@ UI::InputBlocking OnKeyPress(bool down, VirtualKey key) {
         if (!GetPlaygroundValidAndEditorNull() || SoloModeExitCheck())
             return UI::InputBlocking::DoNothing;
 
-        S_ShowWindow = !S_ShowWindow;
+        S_Enabled = !S_Enabled;
         UI::ShowNotification(Meta::ExecutingPlugin().Name, "Toggled visibility", vec4(0.1, 0.4, 0.8, 0.4));
         return UI::InputBlocking::Block;
     }
@@ -47,13 +72,13 @@ void RenderMenu() {
     if (!GetPermissionsOkay())
         return;
 
-    if (UI::MenuItem(title, "", S_ShowWindow))
-        S_ShowWindow = !S_ShowWindow;
+    if (UI::MenuItem(title, "", S_Enabled))
+        S_Enabled = !S_Enabled;
 }
 
 void Update(float) {
     // checking this every frame has minimal overhead; <0.1ms
-    if (!S_SkipMLFeedCheck && S_ShowWindow)
+    if (!S_SkipMLFeedCheck && S_Enabled)
         CheckMLFeedForBetterTimes();
 }
 
@@ -63,8 +88,8 @@ void CheckMLFeedForBetterTimes() {
         return;
 
     bool foundBetter = false;
-    for (uint i = 0; i < g_Records.Length; i++) {
-        PBTime@ pbTime = g_Records[i];
+    for (uint i = 0; i < records.Length; i++) {
+        PBTime@ pbTime = records[i];
 
         const MLFeed::PlayerCpInfo@ player = raceData.GetPlayer(pbTime.name);
         if (player is null || player.bestTime < 1)
@@ -80,13 +105,13 @@ void CheckMLFeedForBetterTimes() {
     }
 
     if (foundBetter)
-        g_Records.SortAsc();
+        records.SortAsc();
 }
 
 void DrawUI() {
     if (
         !GetPermissionsOkay()
-        || !S_ShowWindow
+        || !S_Enabled
         || SoloModeExitCheck()
         || !GetPlaygroundValidAndEditorNull()
     )
@@ -101,10 +126,10 @@ void DrawUI() {
 
     UI::SetNextWindowSize(400, 400, UI::Cond::FirstUseEver);
 
-    if (UI::Begin(title, S_ShowWindow, uiFlags)) {
+    if (UI::Begin(title, S_Enabled, uiFlags)) {
         if (GetApp().CurrentPlayground is null || GetApp().Editor !is null)
             UI::Text("Not in a map \\$999(or in editor).");
-        else if (g_Records.IsEmpty())
+        else if (records.IsEmpty())
             UI::Text(g_CurrentlyLoadingRecords ? "Loading..." : "No records :(");
         else {
             // put everything in a child so buttons work when interface is hidden
@@ -133,29 +158,29 @@ void DrawUI() {
 
                 if (UI::BeginChild("##pb-table", UI::GetContentRegionAvail())) {
                     uint nbCols = 3; // rank, player and pb time are mandatory
-                    if (S_ShowClubs)
+                    if (S_Clubs)
                         nbCols += 1;
-                    if (S_ShowDates)
+                    if (S_Dates)
                         nbCols += 1;
                     if (S_ShowReplayBtn)
                         nbCols += 1;
 
                     if (UI::BeginTable("local-players-records", nbCols, UI::TableFlags::SizingStretchProp | UI::TableFlags::RowBg)) {
                         UI::TableSetupColumn("");  // rank
-                        if (S_ShowClubs)
+                        if (S_Clubs)
                             UI::TableSetupColumn("Club");
                         UI::TableSetupColumn("Player");
                         UI::TableSetupColumn("PB Time");
-                        if (S_ShowDates)
+                        if (S_Dates)
                             UI::TableSetupColumn("PB Date");
                         if (S_ShowReplayBtn)
                             UI::TableSetupColumn("Replay");
                         UI::TableHeadersRow();
 
-                        UI::ListClipper clip(g_Records.Length);
-                        while (clip.Step()) {
-                            for (int i = clip.DisplayStart; i < clip.DisplayEnd; i++) {
-                                PBTime@ pb = g_Records[i];
+                        UI::ListClipper clipper(records.Length);
+                        while (clipper.Step()) {
+                            for (int i = clipper.DisplayStart; i < clipper.DisplayEnd; i++) {
+                                PBTime@ pb = records[i];
                                 UI::TableNextRow();
 
                                 // highlight if updated -- note: record timestamps can appear in the future, so we just clamp and wait. // pb.recordTs <= Time::Stamp
@@ -168,7 +193,7 @@ void DrawUI() {
                                 UI::TableNextColumn();
                                 UI::Text(tostring(i + 1) + ".");
 
-                                if (S_ShowClubs) {
+                                if (S_Clubs) {
                                     UI::TableNextColumn();
                                     // 0.07 ms overhead for MakeColorsOkayDarkMode for 16 players
                                     if (pb.club.Length > 0)
@@ -182,7 +207,7 @@ void DrawUI() {
                                 UI::TableNextColumn();
                                 UI::Text(pb.timeStr);
 
-                                if (S_ShowDates) {
+                                if (S_Dates) {
                                     UI::TableNextColumn();
                                     UI::Text(pb.recordDate);
                                 }
@@ -220,10 +245,10 @@ uint GetLocalPlayersRank() {
 
     // otherwise update
     lastLPR_Time = Time::Now;
-    lastLPR_Rank = g_Records.Length;
+    lastLPR_Rank = records.Length;
 
-    for (uint i = 0; i < g_Records.Length; i++) {
-        if (g_Records[i].isLocalPlayer) {
+    for (uint i = 0; i < records.Length; i++) {
+        if (records[i].isLocalPlayer) {
             lastLPR_Rank = i + 1;
             break;
         }
@@ -244,7 +269,6 @@ bool GetPermissionsOkay() {
     return Permissions::ViewRecords();
 }
 
-// Returns a sorted list of player PB time objects. This is assumed to be called only from UpdateRecords().
 PBTime@[] GetPlayersPBs() {
     CTrackMania@ App = cast<CTrackMania@>(GetApp());
     CTrackManiaNetwork@ Network = cast<CTrackManiaNetwork@>(App.Network);
@@ -280,14 +304,15 @@ PBTime@[] GetPlayersPBs() {
     }
 
     /* note:
-        - usually we expect `rl.MapRecordList.Length != players.Length`
-        - `players[i].User.WebServicesUserId != rl.MapRecordList[i].WebServicesUserId`
+        - usually we expect `task.MapRecordList.Length != players.Length`
+        - `players[i].User.WebServicesUserId != task.MapRecordList[i].WebServicesUserId`
        so we use a dictionary to look up the players (wsidToPlayer we set up earlier)
     */
 
     const string localWSID = GetLocalPlayerWSID();
 
     PBTime@[] ret;
+
     for (uint i = 0; i < task.MapRecordList.Length; i++) {
         CMapRecord@ Record = task.MapRecordList[i];
         CSmPlayer@ _p = cast<CSmPlayer@>(wsidToPlayer[Record.WebServicesUserId]);
@@ -295,6 +320,7 @@ PBTime@[] GetPlayersPBs() {
             warn("Failed to lookup player from temp dict");
             continue;
         }
+
         ret.InsertLast(PBTime(_p, Record, Record.WebServicesUserId == localWSID));
         // remove the player so we can quickly get all players in server that don't have records
         wsidToPlayer.Delete(Record.WebServicesUserId);
@@ -353,33 +379,6 @@ CSmPlayer@[]@ GetPlayersInServer() {
     return ret;
 }
 
-void MainLoop() {
-    // when current playground becomes not-null, get records
-    // when player count changes, get records
-    // when playground goes null, reset
-    while (GetPermissionsOkay()) {
-        yield();
-
-        if (GetPlaygroundValidAndEditorNull() && S_ShowWindow) {
-            startnew(UpdateRecords);
-            lastPbUpdate = Time::Now; // set this here to avoid triggering immediately
-
-            while (GetPlaygroundValidAndEditorNull() && S_ShowWindow) {
-                yield();
-
-                if (g_PlayersInServerLast != GetPlayersInServerCount() || lastPbUpdate + 60000 < Time::Now) {
-                    g_PlayersInServerLast = GetPlayersInServerCount();
-                    startnew(UpdateRecords);
-                    lastPbUpdate = Time::Now; // bc we start it in a coro; don't want to run twice
-                }
-            }
-            g_Records.RemoveRange(0, g_Records.Length);
-        }
-
-        while (!GetPlaygroundValidAndEditorNull() || !S_ShowWindow) yield();
-    }
-}
-
 void NotifyMissingPermissions() {
     UI::ShowNotification(
         title,
@@ -405,7 +404,7 @@ void UpdateRecords() {
     PBTime@[] newPBs = GetPlayersPBs();
 
     if (newPBs.Length > 0)  // empty arrays are returned on e.g., http error
-        g_Records = newPBs;
+        records = newPBs;
 }
 
 class PBTime {

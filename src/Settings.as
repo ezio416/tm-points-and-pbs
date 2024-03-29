@@ -1,5 +1,5 @@
-[Setting hidden]
-bool S_ShowWindow = true;
+[Setting category="General" name="Enabled"]
+bool S_Enabled = true;
 
 [Setting category="PB List" name="Show when Overlay Hidden?" description="Whether to show the window regardless of if the Openplanet overlay is hidden or not."]
 bool S_ShowWhenUIHidden = true;
@@ -19,11 +19,11 @@ bool S_HideTopInfo = false;
 [Setting category="PB List" name="Map Name in Top Info?" description="Show the map name in the top info."]
 bool S_TopInfoMapName = true;
 
-[Setting category="PB List" name="Show Clubs?" description="Will show club tags in the list. Club tags have a slight performance impact."]
-bool S_ShowClubs = true;
+[Setting category="PB List" name="Show club tags" description="Will show club tags in the list. Club tags have a slight performance impact."]
+bool S_Clubs = true;
 
-[Setting category="PB List" name="Show Dates?" description="Will show the date the PB was set"]
-bool S_ShowDates = false;
+[Setting category="PB List" name="Show PB dates"]
+bool S_Dates = false;
 
 // don't expose via settings -- not sure it's that useful and mucks up formatting.
 // [Setting category="PB List" name="Show Replay Download Button?" description="Will show a button to download a player's PB ghost/replay"]
