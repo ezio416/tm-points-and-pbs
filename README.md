@@ -1,33 +1,15 @@
-# List Players' PBs
+![Signed](https://img.shields.io/badge/Signed-No-FF3333)
+![Game Trackmania](https://img.shields.io/badge/Game-Trackmania-blue)
 
-Provides a window showing PBs for players in the current server/room.
+# Points and PBs
 
-PBs will refreshed whenever a player leaves/joins the server, or after 60s if nobody has joined/left in that time.
+When playing in a server (or solo if you really want to), this will show a window containing the points (if applicable, i.e. ranked mode) and personal best times of everyone in the lobby.
 
-PBs will show up green when they were set within the last minute (and fade to white over that time).
+Forked from [XertroV's "List Players' PBs' plugin](https://github.com/XertroV/tm-list-players-pbs)
 
-*Live* updates are supported via the *optional dependency* **MLFeed: Race Data**.
-If you install that (along with MLHook) then you will see a player's new PB immediately when it is set (without a refresh).
-
-Settings:
-
-* Show when overlay hidden (persistent window); default true
-* Lock window when overlay hidden; default true
-* Show title bar when unlocked; default true
-* Hide top info (refresh button, rank, map name); default false
-* Map name in top info; default true
-* Show players' club tag; default true
-* Show the date the PB was set; default false
-* Highlight recent PBs; default true
-* (If MLFeed is installed) Disable checking MLFeed for updates; default false
-* Hotkey enable & choice (default disabled)
-
-License: Public Domain
-
-Authors: XertroV
-
-Suggestions/feedback: @XertroV on Openplanet discord
-
-Code/issues: [https://github.com/XertroV/tm-list-players-pbs](https://github.com/XertroV/tm-list-players-pbs)
-
-GL HF
+<!-- ![Signed](https://img.shields.io/badge/Signed-Yes-00AA00) -->
+<!-- ![Signed](https://img.shields.io/badge/Signed-School_Mode-CC1199) -->
+<!-- ![Number of downloads](https://img.shields.io/badge/dynamic/json?query=downloads&url=https%3A%2F%2Fopenplanet.dev%2Fapi%2Fplugin%2F___&label=Downloads&color=purple) -->
+<!-- ![Version](https://img.shields.io/badge/dynamic/json?query=version&url=https%3A%2F%2Fopenplanet.dev%2Fapi%2Fplugin%2F___&label=Version&color=red) -->
+<!-- ![Game Maniaplanet](https://img.shields.io/badge/Game-Maniaplanet_4-blue) -->
+<!-- ![Game Turbo](https://img.shields.io/badge/Game-Turbo-blue) -->
