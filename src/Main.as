@@ -53,11 +53,11 @@ void Render() {
                 if (player is null || player.bestTime < 1)
                     continue;
 
-                if (player.bestTime < int(pbTime.time) || pbTime.time < 1) {
-                    pbTime.time = player.bestTime;
+                pbTime.sessionPb = player.bestTime;
+
+                if (pbTime.sessionPb < pbTime.time || pbTime.time == 0) {
+                    pbTime.time = pbTime.sessionPb;
                     pbTime.recordTs = Time::Stamp;
-                    pbTime.replayUrl = "";
-                    pbTime.UpdateCachedStrings();
                     foundBetter = true;
                 }
             }
@@ -87,20 +87,25 @@ void Render() {
         else {
             uint nbCols = 3;  // rank, player and pb time are mandatory
             if (S_Clubs)
-                nbCols += 1;
+                nbCols++;
             if (S_Dates)
-                nbCols += 1;
+                nbCols++;
+            if (S_SessionPB)
+                nbCols++;
 
-            if (UI::BeginTable("local-players-records", nbCols, UI::TableFlags::ScrollY)) {
+            UI::PushStyleColor(UI::Col::TableBorderLight, vec4(1.0f, 0.0f, 0.0f, 0.5f));  // should be UI::Col:Separator?
+
+            if (UI::BeginTable("local-players-records", nbCols, UI::TableFlags::ScrollY | UI::TableFlags::Resizable)) {
                 UI::TableSetupScrollFreeze(0, 1);
-
                 UI::TableSetupColumn("", UI::TableColumnFlags::WidthFixed, scale * 25.0f);  // rank
                 if (S_Clubs)
                     UI::TableSetupColumn("Club", UI::TableColumnFlags::WidthFixed, scale * 50.0f);
                 UI::TableSetupColumn("Player");
-                UI::TableSetupColumn("PB Time");
+                UI::TableSetupColumn("PB Time", UI::TableColumnFlags::WidthFixed, scale * 80.0f);
                 if (S_Dates)
                     UI::TableSetupColumn("PB Date", UI::TableColumnFlags::WidthFixed, scale * 80.0f);
+                if (S_SessionPB)
+                    UI::TableSetupColumn("Session", UI::TableColumnFlags::WidthFixed, scale * 80.0f);
                 UI::TableHeadersRow();
 
                 UI::ListClipper clipper(records.Length);
@@ -129,11 +134,16 @@ void Render() {
                         UI::Text(pb.name);
 
                         UI::TableNextColumn();
-                        UI::Text(pb.timeStr);
+                        UI::Text(pb.time > 0 ? Time::Format(pb.time) : "");
 
                         if (S_Dates) {
                             UI::TableNextColumn();
-                            UI::Text(pb.recordDate);
+                            UI::Text(pb.recordTs > 0 ? Time::FormatString("%m-%d %H:%M", pb.recordTs) : "");
+                        }
+
+                        if (S_SessionPB) {
+                            UI::TableNextColumn();
+                            UI::Text(pb.sessionPb > 0 ? Time::Format(pb.sessionPb) : "");
                         }
 
                         if (shouldHighlight)
@@ -143,6 +153,8 @@ void Render() {
 
                 UI::EndTable();
             }
+
+            UI::PopStyleColor();
         }
     }
 
@@ -300,11 +312,9 @@ class PBTime {
     string club;
     bool   isLocalPlayer = false;
     string name;
+    uint   sessionPb     = 0;
     uint   time          = 0;
-    string timeStr;
-    string recordDate;
     uint   recordTs      = 0;
-    string replayUrl;
     string wsid;
 
     PBTime(CSmPlayer@ Player, CMapRecord@ Record, bool localPlayer = false) {
@@ -317,17 +327,9 @@ class PBTime {
         isLocalPlayer = localPlayer;
 
         if (Record !is null) {
-            recordTs  = Record.Timestamp;
-            replayUrl = Record.ReplayUrl;
-            time      = Record.Time;
+            recordTs = Record.Timestamp;
+            time     = Record.Time;
         }
-
-        UpdateCachedStrings();
-    }
-
-    void UpdateCachedStrings() {
-        recordDate = recordTs > 0 ? Time::FormatString("%m-%d %H:%M", recordTs) : "";
-        timeStr    = time > 0 ? Time::Format(time) : "";
     }
 
     int opCmp(PBTime@ other) const {

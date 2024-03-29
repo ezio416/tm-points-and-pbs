@@ -16,5 +16,8 @@ bool S_Clubs = true;
 [Setting category="General" name="Show PB dates"]
 bool S_Dates = false;
 
+[Setting category="General" name="Show session PB"]
+bool S_SessionPB = false;
+
 [Setting category="General" name="Highlight Recent PBs?" description="Will highlight PBs set within the last 60s."]
 bool S_HIghlightRecent = true;
