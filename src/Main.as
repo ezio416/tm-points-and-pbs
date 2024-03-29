@@ -133,7 +133,7 @@ void DrawUI() {
             if (UI::BeginChild("##pbs-full-ui", UI::GetContentRegionAvail())) {
 
                 // refresh/loading    #N Players: 22    Your Rank: 19 / 22
-                if (!S_HideTopInfo) {
+                if (S_TopInfo) {
                     UI::AlignTextToFramePadding();
                     vec2 curPos1 = UI::GetCursorPos();
                     if (g_CurrentlyLoadingRecords)
@@ -406,37 +406,33 @@ void UpdateRecords() {
 
 class PBTime {
     string club;
-    bool   isLocalPlayer;
+    bool   isLocalPlayer = false;
     string name;
-    uint   time;
+    uint   time          = 0;
     string timeStr;
     string recordDate;
-    uint   recordTs;
+    uint   recordTs      = 0;
     string replayUrl;
     string wsid;
 
-    PBTime(CSmPlayer@ _player, CMapRecord@ _rec, bool _isLocalPlayer = false) {
+    PBTime(CSmPlayer@ _player, CMapRecord@ Record, bool localPlayer = false) {
         wsid = _player.User.WebServicesUserId;  // rare null pointer exception here? `Invalid address for member ID 03002000. This is likely a Nadeo bug! Setting it to null!`
         name = _player.User.Name;
         club = _player.User.ClubTag;
-        isLocalPlayer = _isLocalPlayer;
+        isLocalPlayer = localPlayer;
 
-        if (_rec !is null) {
-            time = _rec.Time;
-            replayUrl = _rec.ReplayUrl;
-            recordTs = _rec.Timestamp;
-        } else {
-            time = 0;
-            replayUrl = "";
-            recordTs = 0;
+        if (Record !is null) {
+            recordTs  = Record.Timestamp;
+            replayUrl = Record.ReplayUrl;
+            time      = Record.Time;
         }
 
         UpdateCachedStrings();
     }
 
     void UpdateCachedStrings() {
-        timeStr = time == 0 ? "???" : Time::Format(time);
-        recordDate = recordTs == 0 ? "??-??-?? ??:??" : Time::FormatString("%y-%m-%d %H:%M", recordTs);
+        recordDate = recordTs > 0 ? Time::FormatString("%m-%d %H:%M", recordTs) : "";
+        timeStr    = time > 0 ? Time::Format(time) : "";
     }
 
     int opCmp(PBTime@ other) const {

@@ -13,10 +13,10 @@ bool S_TitleBarWhenUnlocked = true;
 [Setting category="General" name="Hide Window in Solo Play?" description="When checked, the window will only show in multiplayer servers, not local games."]
 bool S_HideInSoloMode = true;
 
-[Setting category="General" name="Hide Top Info?" description="The top info (showing refresh btn, #Players, and your rank) will be hidden if this is checked."]
-bool S_HideTopInfo = false;
+[Setting category="General" name="Show top info"]
+bool S_TopInfo = false;
 
-[Setting category="General" name="Map Name in Top Info?" description="Show the map name in the top info."]
+[Setting category="General" name="Map name in top info" description="Show the map name in the top info."]
 bool S_TopInfoMapName = true;
 
 [Setting category="General" name="Show club tags" description="Will show club tags in the list. Club tags have a slight performance impact."]
