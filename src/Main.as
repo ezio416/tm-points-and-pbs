@@ -10,11 +10,6 @@ PBTime@[]    records;
 const string title                     = "\\$4C4" + Icons::ListOl + "\\$G Points And PBs";
 
 void Main() {
-    if (!GetPermissionsOkay()) {
-        NotifyMissingPermissions();
-        return;
-    }
-
     // when current playground becomes not-null, get records
     // when player count changes, get records
     // when playground goes null, reset
@@ -41,6 +36,8 @@ void Main() {
         while (!GetPlaygroundValidAndEditorNull() || !S_Enabled)
             yield();
     }
+
+    NotifyMissingPermissions();
 }
 
 UI::InputBlocking OnKeyPress(bool down, VirtualKey key) {
