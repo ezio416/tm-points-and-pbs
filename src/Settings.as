@@ -10,17 +10,29 @@ bool S_HideWithOP = false;
 [Setting category="General" name="Show window in solo"]
 bool S_ShowInSoloMode = false;
 
+[Setting category="General" name="Auto-size window"]
+bool S_AutoSize = false;
+
 [Setting category="General" name="Show column headers"]
 bool S_Headers = true;
+
+[Setting category="General" name="Show rank"]
+bool S_Rank = false;
 
 [Setting category="General" name="Show club tags" description="slight performance impact"]
 bool S_Clubs = true;
 
-[Setting category="General" name="Icon size" min=1.0f max=100.0f]
-float S_IconSize = 20.0f;
+[Setting category="General" name="Auto-size player name column"]
+bool S_AutoPlayerCol = true;
 
-[Setting category="General" name="Show medal icons"]
-bool S_Medals = true;
+enum IconType {
+    None,
+    Real,
+    Simple
+}
+
+[Setting category="General" name="Medal icons"]
+IconType S_Medal = IconType::Simple;
 
 [Setting category="General" name="Show PB dates"]
 bool S_Dates = true;

@@ -8,14 +8,16 @@ vec2           iconSize            = vec2();
 UI::Texture@[] iconsMedals;
 UI::Texture@[] iconsRanked;
 UI::Texture@[] iconsRoyal;
+const string[] medalColors         = { "\\$444", "\\$964", "\\$899", "\\$DB4", "\\$071" };
+float          playerColumnWidth   = 0.0f;
 int            playersInServerLast = 0;
 PBTime@[]      records;
 const float    scale               = UI::GetScale();
 const string   title               = "\\$4C4" + Icons::ListOl + "\\$G Points And PBs";
 
 void Main() {
-    iconOffset = vec2(1.0f, 0.2f) * scale * 10.0f;
-    SetIconSize();
+    iconOffset = vec2(1.0f, 0.2f)    * scale * 10.0f;
+    iconSize   = vec2(1.2642f, 1.0f) * scale * 20.0f;
 
     LoadIconsMedals();
     // LoadIconsRanked();
@@ -60,11 +62,9 @@ void Main() {
     UI::ShowNotification(title, msg, vec4(1.0f, 0.4f, 0.1f, 0.3f), 10000);
 }
 
-void OnSettingsChanged() {
-    SetIconSize();
-}
-
 void Render() {
+    playerColumnWidth = 0.0f;
+
     if (S_Enabled) {
         const MLFeed::RaceDataProxy@ raceData = MLFeed::GetRaceData();
 
@@ -73,6 +73,8 @@ void Render() {
 
             for (uint i = 0; i < records.Length; i++) {
                 PBTime@ pbTime = records[i];
+
+                playerColumnWidth = Math::Max(playerColumnWidth, Draw::MeasureString(pbTime.name).x);
 
                 const MLFeed::PlayerCpInfo@ player = raceData.GetPlayer(pbTime.name);
                 if (player is null || player.bestTime < 1)
@@ -110,26 +112,34 @@ void Render() {
     const uint silverTime = App.RootMap.TMObjective_SilverTime;
     const uint bronzeTime = App.RootMap.TMObjective_BronzeTime;
 
-    if (UI::Begin(title, S_Enabled, UI::WindowFlags::NoTitleBar)) {
+    int windowFlags = UI::WindowFlags::NoTitleBar;
+    if (S_AutoSize)
+        windowFlags |= UI::WindowFlags::AlwaysAutoResize;
+
+    if (UI::Begin(title, S_Enabled, windowFlags)) {
         if (App.CurrentPlayground is null || App.Editor !is null)
             UI::Text("Not in a map \\$999(or in editor).");
         else if (records.IsEmpty())
             UI::Text(loadingRecords ? "Loading..." : "No records :(");
         else {
             uint nbCols = 2;
-            if (S_Clubs)
-                nbCols++;
-            if (S_Dates)
-                nbCols++;
-            if (S_SessionPB)
-                nbCols++;
+            if (S_Rank)      nbCols++;
+            if (S_Clubs)     nbCols++;
+            if (S_Dates)     nbCols++;
+            if (S_SessionPB) nbCols++;
 
             UI::PushStyleColor(UI::Col::TableBorderLight, S_ColSepColor);  // should be UI::Col:Separator?
 
             if (UI::BeginTable("local-players-records", nbCols, UI::TableFlags::ScrollY | UI::TableFlags::Resizable)) {
                 UI::TableSetupScrollFreeze(0, 1);
-                if (S_Clubs)     UI::TableSetupColumn("Club",    UI::TableColumnFlags::NoResize | UI::TableColumnFlags::WidthFixed, scale * 50.0f);
-                                 UI::TableSetupColumn("Player",  UI::TableColumnFlags::NoResize);
+                if (S_Rank)  UI::TableSetupColumn("#",    UI::TableColumnFlags::NoResize | UI::TableColumnFlags::WidthFixed, scale * 20.0f);
+                if (S_Clubs) UI::TableSetupColumn("Club", UI::TableColumnFlags::NoResize | UI::TableColumnFlags::WidthFixed, scale * 50.0f);
+
+                if (S_AutoPlayerCol)
+                    UI::TableSetupColumn("Player", UI::TableColumnFlags::NoResize | UI::TableColumnFlags::WidthFixed, playerColumnWidth);
+                else
+                    UI::TableSetupColumn("Player", UI::TableColumnFlags::NoResize);
+
                                  UI::TableSetupColumn("PB Time", UI::TableColumnFlags::NoResize | UI::TableColumnFlags::WidthFixed, scale * 80.0f);
                 if (S_Dates)     UI::TableSetupColumn("PB Date", UI::TableColumnFlags::NoResize | UI::TableColumnFlags::WidthFixed, scale * 75.0f);
                 if (S_SessionPB) UI::TableSetupColumn("Session", UI::TableColumnFlags::NoResize | UI::TableColumnFlags::WidthFixed, scale * 80.0f);
@@ -141,11 +151,15 @@ void Render() {
                         PBTime@ pb = records[i];
                         UI::TableNextRow();
 
-                        // highlight if updated -- note: record timestamps can appear in the future, so we just clamp and wait. // pb.recordTs <= Time::Stamp
                         const bool shouldHighlight = S_HIghlightRecent && pb.recordTs + 60 > uint(Time::Stamp);
                         if (shouldHighlight) {
                             const float hlAmount = 1.0f - Math::Clamp(float(int(Time::Stamp) - int(pb.recordTs)) / 60.0f, 0.0f, 1.0f);
                             UI::PushStyleColor(UI::Col::Text, S_HighlightColor * hlAmount + vec4(1.0f, 1.0f, 1.0f, 1.0f) * (1.0f - hlAmount));
+                        }
+
+                        if (S_Rank) {
+                            UI::TableNextColumn();
+                            UI::Text(tostring(i + 1) + ".");
                         }
 
                         if (S_Clubs) {
@@ -159,7 +173,7 @@ void Render() {
 
                         UI::TableNextColumn();
                         UI::Text(pb.time > 0 ? Time::Format(pb.time) : "");
-                        if (S_Medals) {
+                        if (S_Medal != IconType::None) {
                             uint medal = 0;
 
                             if (pb.time > 0) {
@@ -174,13 +188,19 @@ void Render() {
                             }
 
                             UI::SameLine();
-                            UI::Texture@ icon = GetIconMedal(medal);
-                            UI::SetCursorPos(UI::GetCursorPos() - iconOffset);
 
-                            if (icon !is null)
-                                UI::Image(icon, iconSize);
-                            else
-                                UI::Dummy(iconSize);
+                            if (S_Medal == IconType::Real) {
+                                UI::Texture@ icon = GetIconMedal(medal);
+                                UI::SetCursorPos(UI::GetCursorPos() - iconOffset);
+
+                                if (icon !is null)
+                                    UI::Image(icon, iconSize);
+                                else
+                                    UI::Dummy(iconSize);
+                            } else {
+                                UI::SetCursorPos(UI::GetCursorPos() - vec2(iconOffset.x * 0.5f, iconOffset.y * -0.5f));
+                                UI::Text(pb.time > 0 ? medalColors[medal] + Icons::Circle : "");
+                            }
                         }
 
                         if (S_Dates) {
@@ -192,7 +212,7 @@ void Render() {
                             UI::TableNextColumn();
                             UI::Text(pb.sessionPb > 0 ? Time::Format(pb.sessionPb) : "");
 
-                            if (S_Medals) {
+                            if (S_Medal != IconType::None) {
                                 uint medal = 0;
 
                                 if (pb.sessionPb > 0) {
@@ -207,13 +227,19 @@ void Render() {
                                 }
 
                                 UI::SameLine();
-                                UI::Texture@ icon = GetIconMedal(medal);
-                                UI::SetCursorPos(UI::GetCursorPos() - iconOffset);
 
-                                if (icon !is null)
-                                    UI::Image(icon, iconSize);
-                                else
-                                    UI::Dummy(iconSize);
+                                if (S_Medal == IconType::Real) {
+                                    UI::Texture@ icon = GetIconMedal(medal);
+                                    UI::SetCursorPos(UI::GetCursorPos() - iconOffset);
+
+                                    if (icon !is null)
+                                        UI::Image(icon, iconSize);
+                                    else
+                                        UI::Dummy(iconSize);
+                                } else {
+                                    UI::SetCursorPos(UI::GetCursorPos() - vec2(iconOffset.x * 0.5f, iconOffset.y * -0.5f));
+                                    UI::Text(pb.sessionPb > 0 ? medalColors[medal] + Icons::Circle : "");
+                                }
                             }
                         }
 
@@ -391,13 +417,6 @@ bool PlaygroundValidAndEditorNull() {
 void RetryRecordsSoon() {
     sleep(500);
     UpdateRecords();
-}
-
-void SetIconSize() {
-    if (S_IconSize < 1.0f)
-        S_IconSize = 1.0f;
-
-    iconSize = vec2(1.2642f, 1.0f) * scale * S_IconSize;
 }
 
 void UpdateRecords() {
