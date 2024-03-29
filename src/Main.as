@@ -1,14 +1,26 @@
 // c 2024-03-29
 // m 2024-03-29
 
-uint         lastPbUpdate        = 0;
-bool         loadingRecords      = false;
-int          playersInServerLast = 0;
-PBTime@[]    records;
-const float  scale               = UI::GetScale();
-const string title               = "\\$4C4" + Icons::ListOl + "\\$G Points And PBs";
+uint           lastPbUpdate        = 0;
+bool           loadingRecords      = false;
+vec2           iconOffset;
+vec2           iconSize            = vec2();
+UI::Texture@[] iconsMedals;
+UI::Texture@[] iconsRanked;
+UI::Texture@[] iconsRoyal;
+int            playersInServerLast = 0;
+PBTime@[]      records;
+const float    scale               = UI::GetScale();
+const string   title               = "\\$4C4" + Icons::ListOl + "\\$G Points And PBs";
 
 void Main() {
+    iconOffset = vec2(1.0f, 0.2f)    * scale * 10.0f;
+    iconSize   = vec2(1.2642f, 1.0f) * scale * 20.0f;
+
+    LoadIconsMedals();
+    // LoadIconsRanked();
+    // LoadIconsRoyal();
+
     CTrackMania@ App = cast<CTrackMania@>(GetApp());
 
     while (Permissions::ViewRecords()) {
@@ -76,23 +88,31 @@ void Render() {
         }
     }
 
+    CTrackMania@ App = cast<CTrackMania@>(GetApp());
+
     if (
         !S_Enabled
         || !Permissions::ViewRecords()
         || (S_HideWithGame && !UI::IsGameUIVisible())
         || (S_HideWithOP && !UI::IsOverlayShown())
-        || (!S_ShowInSoloMode && GetApp().PlaygroundScript !is null)
+        || (!S_ShowInSoloMode && App.PlaygroundScript !is null)
         || !PlaygroundValidAndEditorNull()
+        || App.RootMap is null  // probably don't need to check but just to be safe
     )
         return;
 
+    const uint authorTime = App.RootMap.TMObjective_AuthorTime;
+    const uint goldTime   = App.RootMap.TMObjective_GoldTime;
+    const uint silverTime = App.RootMap.TMObjective_SilverTime;
+    const uint bronzeTime = App.RootMap.TMObjective_BronzeTime;
+
     if (UI::Begin(title, S_Enabled, UI::WindowFlags::NoTitleBar)) {
-        if (GetApp().CurrentPlayground is null || GetApp().Editor !is null)
+        if (App.CurrentPlayground is null || App.Editor !is null)
             UI::Text("Not in a map \\$999(or in editor).");
         else if (records.IsEmpty())
             UI::Text(loadingRecords ? "Loading..." : "No records :(");
         else {
-            uint nbCols = 3;  // rank, player and pb time are mandatory
+            uint nbCols = 2;
             if (S_Clubs)
                 nbCols++;
             if (S_Dates)
@@ -100,17 +120,16 @@ void Render() {
             if (S_SessionPB)
                 nbCols++;
 
-            UI::PushStyleColor(UI::Col::TableBorderLight, vec4(1.0f, 0.0f, 0.0f, 0.5f));  // should be UI::Col:Separator?
+            UI::PushStyleColor(UI::Col::TableBorderLight, S_ColSepColor);  // should be UI::Col:Separator?
 
             if (UI::BeginTable("local-players-records", nbCols, UI::TableFlags::ScrollY | UI::TableFlags::Resizable)) {
                 UI::TableSetupScrollFreeze(0, 1);
-                                 UI::TableSetupColumn("#",       UI::TableColumnFlags::NoResize | UI::TableColumnFlags::WidthFixed, scale * 25.0f);
                 if (S_Clubs)     UI::TableSetupColumn("Club",    UI::TableColumnFlags::NoResize | UI::TableColumnFlags::WidthFixed, scale * 50.0f);
                                  UI::TableSetupColumn("Player",  UI::TableColumnFlags::NoResize);
                                  UI::TableSetupColumn("PB Time", UI::TableColumnFlags::NoResize | UI::TableColumnFlags::WidthFixed, scale * 80.0f);
-                if (S_Dates)     UI::TableSetupColumn("PB Date", UI::TableColumnFlags::NoResize | UI::TableColumnFlags::WidthFixed, scale * 80.0f);
+                if (S_Dates)     UI::TableSetupColumn("PB Date", UI::TableColumnFlags::NoResize | UI::TableColumnFlags::WidthFixed, scale * 75.0f);
                 if (S_SessionPB) UI::TableSetupColumn("Session", UI::TableColumnFlags::NoResize | UI::TableColumnFlags::WidthFixed, scale * 80.0f);
-                UI::TableHeadersRow();
+                if (S_Headers)   UI::TableHeadersRow();
 
                 UI::ListClipper clipper(records.Length);
                 while (clipper.Step()) {
@@ -122,11 +141,8 @@ void Render() {
                         const bool shouldHighlight = S_HIghlightRecent && pb.recordTs + 60 > uint(Time::Stamp);
                         if (shouldHighlight) {
                             const float hlAmount = 1.0f - Math::Clamp(float(int(Time::Stamp) - int(pb.recordTs)) / 60.0f, 0.0f, 1.0f);
-                            UI::PushStyleColor(UI::Col::Text, vec4(0.3f, 0.9f, 0.1f, 1.0f) * hlAmount + vec4(1.0f, 1.0f, 1.0f, 1.0f) * (1.0f - hlAmount));
+                            UI::PushStyleColor(UI::Col::Text, S_HighlightColor * hlAmount + vec4(1.0f, 1.0f, 1.0f, 1.0f) * (1.0f - hlAmount));
                         }
-
-                        UI::TableNextColumn();
-                        UI::Text(tostring(i + 1) + ".");
 
                         if (S_Clubs) {
                             UI::TableNextColumn();
@@ -139,6 +155,29 @@ void Render() {
 
                         UI::TableNextColumn();
                         UI::Text(pb.time > 0 ? Time::Format(pb.time) : "");
+                        if (S_Medals) {
+                            uint medal = 0;
+
+                            if (pb.time > 0) {
+                                if (pb.time < authorTime)
+                                    medal = 4;
+                                else if (pb.time < goldTime)
+                                    medal = 3;
+                                else if (pb.time < silverTime)
+                                    medal = 2;
+                                else if (pb.time < bronzeTime)
+                                    medal = 1;
+                            }
+
+                            UI::SameLine();
+                            UI::Texture@ icon = GetIconMedal(medal);
+                            UI::SetCursorPos(UI::GetCursorPos() - iconOffset);
+
+                            if (icon !is null)
+                                UI::Image(icon, iconSize);
+                            else
+                                UI::Dummy(iconSize);
+                        }
 
                         if (S_Dates) {
                             UI::TableNextColumn();
@@ -148,6 +187,30 @@ void Render() {
                         if (S_SessionPB) {
                             UI::TableNextColumn();
                             UI::Text(pb.sessionPb > 0 ? Time::Format(pb.sessionPb) : "");
+
+                            if (S_Medals) {
+                                uint medal = 0;
+
+                                if (pb.sessionPb > 0) {
+                                    if (pb.sessionPb < authorTime)
+                                        medal = 4;
+                                    else if (pb.sessionPb < goldTime)
+                                        medal = 3;
+                                    else if (pb.sessionPb < silverTime)
+                                        medal = 2;
+                                    else if (pb.sessionPb < bronzeTime)
+                                        medal = 1;
+                                }
+
+                                UI::SameLine();
+                                UI::Texture@ icon = GetIconMedal(medal);
+                                UI::SetCursorPos(UI::GetCursorPos() - iconOffset);
+
+                                if (icon !is null)
+                                    UI::Image(icon, iconSize);
+                                else
+                                    UI::Dummy(iconSize);
+                            }
                         }
 
                         if (shouldHighlight)
@@ -171,6 +234,67 @@ void RenderMenu() {
 
     if (UI::MenuItem(title, "", S_Enabled))
         S_Enabled = !S_Enabled;
+}
+
+UI::Texture@ GetIconMedal(const uint medal) {
+    if (medal < iconsMedals.Length)
+        return iconsMedals[medal];
+
+    return null;
+}
+
+void LoadIconsMedals() {
+    iconsMedals = {};
+    iconsMedals.InsertLast(null);
+
+    UI::Texture@ tex;
+
+    for (uint i = 1; i < 5; i++) {
+        yield();
+
+        @tex = UI::LoadTexture("src/Assets/Medals/" + i + ".png");
+
+        if (tex !is null)
+            iconsMedals.InsertLast(tex);
+        else
+            warn("null texture for medal " + i);
+    }
+}
+
+void LoadIconsRanked() {
+    iconsRanked = {};
+    iconsRanked.InsertLast(null);
+
+    UI::Texture@ tex;
+
+    for (uint i = 1; i < 14; i++) {
+        yield();
+
+        @tex = UI::LoadTexture("src/Assets/Ranked/" + i + ".png");
+
+        if (tex !is null)
+            iconsRanked.InsertLast(tex);
+        else
+            warn("null texture for ranked " + i);
+    }
+}
+
+void LoadIconsRoyal() {
+    iconsRoyal = {};
+    iconsRoyal.InsertLast(null);
+
+    UI::Texture@ tex;
+
+    for (uint i = 1; i < 5; i++) {
+        yield();
+
+        @tex = UI::LoadTexture("src/Assets/Royal/" + i + ".png");
+
+        if (tex !is null)
+            iconsRoyal.InsertLast(tex);
+        else
+            warn("null texture for royal " + i);
+    }
 }
 
 PBTime@[] GetPlayersPBs() {
@@ -281,6 +405,7 @@ class PBTime {
     uint   recordTs  = 0;
     string wsid;
 
+    PBTime() { }
     PBTime(CSmPlayer@ Player, CMapRecord@ Record) {
         if (Player.User !is null) {
             wsid = Player.User.WebServicesUserId;  // rare null pointer exception here? `Invalid address for member ID 03002000. This is likely a Nadeo bug! Setting it to null!`
