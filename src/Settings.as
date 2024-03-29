@@ -16,6 +16,9 @@ bool S_Headers = true;
 [Setting category="General" name="Show club tags" description="slight performance impact"]
 bool S_Clubs = false;
 
+[Setting category="General" name="Icon size" min=1.0f max=100.0f]
+float S_IconSize = 20.0f;
+
 [Setting category="General" name="Show medal icons"]
 bool S_Medals = true;
 

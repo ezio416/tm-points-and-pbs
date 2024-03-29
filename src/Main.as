@@ -14,8 +14,8 @@ const float    scale               = UI::GetScale();
 const string   title               = "\\$4C4" + Icons::ListOl + "\\$G Points And PBs";
 
 void Main() {
-    iconOffset = vec2(1.0f, 0.2f)    * scale * 10.0f;
-    iconSize   = vec2(1.2642f, 1.0f) * scale * 20.0f;
+    iconOffset = vec2(1.0f, 0.2f) * scale * 10.0f;
+    SetIconSize();
 
     LoadIconsMedals();
     // LoadIconsRanked();
@@ -58,6 +58,10 @@ void Main() {
 
     warn(msg);
     UI::ShowNotification(title, msg, vec4(1.0f, 0.4f, 0.1f, 0.3f), 10000);
+}
+
+void OnSettingsChanged() {
+    SetIconSize();
 }
 
 void Render() {
@@ -387,6 +391,13 @@ bool PlaygroundValidAndEditorNull() {
 void RetryRecordsSoon() {
     sleep(500);
     UpdateRecords();
+}
+
+void SetIconSize() {
+    if (S_IconSize < 1.0f)
+        S_IconSize = 1.0f;
+
+    iconSize = vec2(1.2642f, 1.0f) * scale * S_IconSize;
 }
 
 void UpdateRecords() {
