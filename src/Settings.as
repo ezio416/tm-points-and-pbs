@@ -7,8 +7,8 @@ bool S_HideWithGame = true;
 [Setting category="General" name="Hide with Openplanet UI"]
 bool S_HideWithOP = false;
 
-[Setting category="General" name="Hide window in solo" description="When checked, the window will only show in multiplayer servers, not local games."]
-bool S_HideInSoloMode = true;
+[Setting category="General" name="Show window in solo"]
+bool S_ShowInSoloMode = true;
 
 [Setting category="General" name="Show club tags" description="slight performance impact"]
 bool S_Clubs = true;
@@ -19,5 +19,5 @@ bool S_Dates = false;
 [Setting category="General" name="Show session PB"]
 bool S_SessionPB = false;
 
-[Setting category="General" name="Highlight Recent PBs?" description="Will highlight PBs set within the last 60s."]
+[Setting category="General" name="Highlight Recent PBs?" description="highlights PBs set within the last minute"]
 bool S_HIghlightRecent = true;

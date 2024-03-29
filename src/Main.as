@@ -72,7 +72,7 @@ void Render() {
         || (S_HideWithOP && !UI::IsOverlayShown())
         || (S_HideWithGame && !UI::IsGameUIVisible())
         || !GetPermissionsOkay()
-        || SoloModeExitCheck()
+        || (!S_ShowInSoloMode && GetApp().PlaygroundScript !is null)
         || !GetPlaygroundValidAndEditorNull()
     )
         return;
@@ -169,14 +169,6 @@ void RenderMenu() {
         S_Enabled = !S_Enabled;
 }
 
-string GetLocalPlayerWSID() {
-    try {
-        return GetApp().Network.ClientManiaAppPlayground.LocalUser.WebServicesUserId;
-    } catch {
-        return "";
-    }
-}
-
 bool GetPermissionsOkay() {
     return Permissions::ViewRecords();
 }
@@ -221,8 +213,6 @@ PBTime@[] GetPlayersPBs() {
        so we use a dictionary to look up the players (wsidToPlayer we set up earlier)
     */
 
-    const string localWSID = GetLocalPlayerWSID();
-
     PBTime@[] ret;
 
     for (uint i = 0; i < task.MapRecordList.Length; i++) {
@@ -233,7 +223,7 @@ PBTime@[] GetPlayersPBs() {
             continue;
         }
 
-        ret.InsertLast(PBTime(_p, Record, Record.WebServicesUserId == localWSID));
+        ret.InsertLast(PBTime(_p, Record));
         // remove the player so we can quickly get all players in server that don't have records
         wsidToPlayer.Delete(Record.WebServicesUserId);
     }
@@ -296,10 +286,6 @@ void RetryRecordsSoon() {
     UpdateRecords();
 }
 
-bool SoloModeExitCheck() {
-    return S_HideInSoloMode && GetApp().PlaygroundScript !is null;
-}
-
 void UpdateRecords() {
     lastPbUpdate = Time::Now;
     PBTime@[] newPBs = GetPlayersPBs();
@@ -310,21 +296,18 @@ void UpdateRecords() {
 
 class PBTime {
     string club;
-    bool   isLocalPlayer = false;
     string name;
-    uint   sessionPb     = 0;
-    uint   time          = 0;
-    uint   recordTs      = 0;
+    uint   sessionPb = 0;
+    uint   time      = 0;
+    uint   recordTs  = 0;
     string wsid;
 
-    PBTime(CSmPlayer@ Player, CMapRecord@ Record, bool localPlayer = false) {
+    PBTime(CSmPlayer@ Player, CMapRecord@ Record) {
         if (Player.User !is null) {
             wsid = Player.User.WebServicesUserId;  // rare null pointer exception here? `Invalid address for member ID 03002000. This is likely a Nadeo bug! Setting it to null!`
             name = Player.User.Name;
             club = Player.User.ClubTag;
         }
-
-        isLocalPlayer = localPlayer;
 
         if (Record !is null) {
             recordTs = Record.Timestamp;
