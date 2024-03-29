@@ -1,26 +1,35 @@
 // c 2024-03-29
 // m 2024-03-29
 
-bool         g_CurrentlyLoadingRecords = false;
-uint         g_PlayersInServerLast     = 0;
-uint         lastPbUpdate              = 0;
+uint         lastPbUpdate        = 0;
+bool         loadingRecords      = false;
+int          playersInServerLast = 0;
 PBTime@[]    records;
-const float  scale                     = UI::GetScale();
-const string title                     = "\\$4C4" + Icons::ListOl + "\\$G Points And PBs";
+const float  scale               = UI::GetScale();
+const string title               = "\\$4C4" + Icons::ListOl + "\\$G Points And PBs";
 
 void Main() {
-    while (GetPermissionsOkay()) {
+    CTrackMania@ App = cast<CTrackMania@>(GetApp());
+
+    while (Permissions::ViewRecords()) {
         yield();
 
-        if (GetPlaygroundValidAndEditorNull() && S_Enabled) {
+        if (PlaygroundValidAndEditorNull() && S_Enabled) {
             startnew(UpdateRecords);
             lastPbUpdate = Time::Now;  // set this here to avoid triggering immediately
 
-            while (GetPlaygroundValidAndEditorNull() && S_Enabled) {
+            while (PlaygroundValidAndEditorNull() && S_Enabled) {
                 yield();
 
-                if (g_PlayersInServerLast != GetPlayersInServerCount() || lastPbUpdate + 60000 < Time::Now) {
-                    g_PlayersInServerLast = GetPlayersInServerCount();
+                int playersInServer = -1;
+
+                CSmArenaClient@ Playground = cast<CSmArenaClient@>(App.CurrentPlayground);
+
+                if (Playground !is null)
+                    playersInServer = int(Playground.Players.Length);
+
+                if (playersInServerLast != playersInServer || lastPbUpdate + 60000 < Time::Now) {
+                    playersInServerLast = playersInServer;
                     startnew(UpdateRecords);
                     lastPbUpdate = Time::Now;  // bc we start it in a coro; don't want to run twice
                 }
@@ -29,7 +38,7 @@ void Main() {
             records = {};
         }
 
-        while (!GetPlaygroundValidAndEditorNull() || !S_Enabled)
+        while (!PlaygroundValidAndEditorNull() || !S_Enabled)
             yield();
     }
 
@@ -69,21 +78,19 @@ void Render() {
 
     if (
         !S_Enabled
-        || (S_HideWithOP && !UI::IsOverlayShown())
+        || !Permissions::ViewRecords()
         || (S_HideWithGame && !UI::IsGameUIVisible())
-        || !GetPermissionsOkay()
+        || (S_HideWithOP && !UI::IsOverlayShown())
         || (!S_ShowInSoloMode && GetApp().PlaygroundScript !is null)
-        || !GetPlaygroundValidAndEditorNull()
+        || !PlaygroundValidAndEditorNull()
     )
         return;
-
-    UI::SetNextWindowSize(400, 400, UI::Cond::FirstUseEver);
 
     if (UI::Begin(title, S_Enabled, UI::WindowFlags::NoTitleBar)) {
         if (GetApp().CurrentPlayground is null || GetApp().Editor !is null)
             UI::Text("Not in a map \\$999(or in editor).");
         else if (records.IsEmpty())
-            UI::Text(g_CurrentlyLoadingRecords ? "Loading..." : "No records :(");
+            UI::Text(loadingRecords ? "Loading..." : "No records :(");
         else {
             uint nbCols = 3;  // rank, player and pb time are mandatory
             if (S_Clubs)
@@ -97,15 +104,12 @@ void Render() {
 
             if (UI::BeginTable("local-players-records", nbCols, UI::TableFlags::ScrollY | UI::TableFlags::Resizable)) {
                 UI::TableSetupScrollFreeze(0, 1);
-                UI::TableSetupColumn("", UI::TableColumnFlags::WidthFixed, scale * 25.0f);  // rank
-                if (S_Clubs)
-                    UI::TableSetupColumn("Club", UI::TableColumnFlags::WidthFixed, scale * 50.0f);
-                UI::TableSetupColumn("Player");
-                UI::TableSetupColumn("PB Time", UI::TableColumnFlags::WidthFixed, scale * 80.0f);
-                if (S_Dates)
-                    UI::TableSetupColumn("PB Date", UI::TableColumnFlags::WidthFixed, scale * 80.0f);
-                if (S_SessionPB)
-                    UI::TableSetupColumn("Session", UI::TableColumnFlags::WidthFixed, scale * 80.0f);
+                                 UI::TableSetupColumn("#",       UI::TableColumnFlags::NoResize | UI::TableColumnFlags::WidthFixed, scale * 25.0f);
+                if (S_Clubs)     UI::TableSetupColumn("Club",    UI::TableColumnFlags::NoResize | UI::TableColumnFlags::WidthFixed, scale * 50.0f);
+                                 UI::TableSetupColumn("Player",  UI::TableColumnFlags::NoResize);
+                                 UI::TableSetupColumn("PB Time", UI::TableColumnFlags::NoResize | UI::TableColumnFlags::WidthFixed, scale * 80.0f);
+                if (S_Dates)     UI::TableSetupColumn("PB Date", UI::TableColumnFlags::NoResize | UI::TableColumnFlags::WidthFixed, scale * 80.0f);
+                if (S_SessionPB) UI::TableSetupColumn("Session", UI::TableColumnFlags::NoResize | UI::TableColumnFlags::WidthFixed, scale * 80.0f);
                 UI::TableHeadersRow();
 
                 UI::ListClipper clipper(records.Length);
@@ -162,45 +166,48 @@ void Render() {
 }
 
 void RenderMenu() {
-    if (!GetPermissionsOkay())
+    if (!Permissions::ViewRecords())
         return;
 
     if (UI::MenuItem(title, "", S_Enabled))
         S_Enabled = !S_Enabled;
 }
 
-bool GetPermissionsOkay() {
-    return Permissions::ViewRecords();
-}
-
 PBTime@[] GetPlayersPBs() {
     CTrackMania@ App = cast<CTrackMania@>(GetApp());
     CTrackManiaNetwork@ Network = cast<CTrackManiaNetwork@>(App.Network);
 
+    CSmArenaClient@ Playground = cast<CSmArenaClient@>(App.CurrentPlayground);
+    if (Playground is null)
+        return {};
+
     CGameManiaAppPlayground@ CMAP = Network.ClientManiaAppPlayground;
-    if (CMAP is null)
+    if (CMAP is null || CMAP.ScoreMgr is null || CMAP.UserMgr is null)
         return {};
 
-    if (CMAP.ScoreMgr is null || CMAP.UserMgr is null)
-        return {};
-
-    CSmPlayer@[]@ players = GetPlayersInServer();
-    if (players is null || players.Length == 0)
-        return {};
+    CSmPlayer@[] Players;
+    for (uint i = 0; i < Playground.Players.Length; i++) {
+        CSmPlayer@ Player = cast<CSmPlayer@>(Playground.Players[i]);
+        if (Player !is null)
+            Players.InsertLast(Player);
+    }
 
     MwFastBuffer<wstring> playerWSIDs = MwFastBuffer<wstring>();
     dictionary wsidToPlayer;
 
-    for (uint i = 0; i < players.Length; i++) {
-        playerWSIDs.Add(players[i].User.WebServicesUserId);
-        @wsidToPlayer[players[i].User.WebServicesUserId] = players[i];
+    for (uint i = 0; i < Players.Length; i++) {
+        if (Players[i].User is null)
+            continue;
+
+        playerWSIDs.Add(Players[i].User.WebServicesUserId);
+        @wsidToPlayer[Players[i].User.WebServicesUserId] = Players[i];
     }
 
-    g_CurrentlyLoadingRecords = true;
+    loadingRecords = true;
     CWebServicesTaskResult_MapRecordListScript@ task = CMAP.ScoreMgr.Map_GetPlayerListRecordList(CMAP.UserMgr.Users[0].Id, playerWSIDs, GetApp().RootMap.MapInfo.MapUid, "PersonalBest", "", "", "");
     while (task.IsProcessing)
         yield();
-    g_CurrentlyLoadingRecords = false;
+    loadingRecords = false;
 
     if (task.HasFailed || !task.HasSucceeded) {
         warn("Requesting records failed. Type,Code,Desc: " + task.ErrorType + ", " + task.ErrorCode + ", " + task.ErrorDescription);
@@ -248,37 +255,9 @@ PBTime@[] GetPlayersPBs() {
     return ret;
 }
 
-uint GetPlayersInServerCount() {
-    CTrackMania@ App = cast<CTrackMania@>(GetApp());
-
-    CSmArenaClient@ Playground = cast<CSmArenaClient@>(App.CurrentPlayground);
-    if (Playground is null)
-        return 0;
-
-    return Playground.Players.Length;
-}
-
-bool GetPlaygroundValidAndEditorNull() {
+bool PlaygroundValidAndEditorNull() {
     CTrackMania@ App = cast<CTrackMania@>(GetApp());
     return App.CurrentPlayground !is null && App.Editor is null;
-}
-
-CSmPlayer@[]@ GetPlayersInServer() {
-    CTrackMania@ App = cast<CTrackMania@>(GetApp());
-
-    CSmArenaClient@ Playground = cast<CSmArenaClient@>(App.CurrentPlayground);
-    if (Playground is null)
-        return {};
-
-    CSmPlayer@[] ret;
-
-    for (uint i = 0; i < Playground.Players.Length; i++) {
-        CSmPlayer@ Player = cast<CSmPlayer@>(Playground.Players[i]);
-        if (Player !is null)
-            ret.InsertLast(Player);
-    }
-
-    return ret;
 }
 
 void RetryRecordsSoon() {
