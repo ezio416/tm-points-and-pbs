@@ -4,267 +4,57 @@
 bool         g_CurrentlyLoadingRecords = false;
 uint         g_PlayersInServerLast     = 0;
 PBTime@[]    g_Records;
-uint         lastLPR_Rank;
-uint         lastLPR_Time;
+uint         lastLPR_Rank              = 0;
+uint         lastLPR_Time              = 0;
 uint         lastPbUpdate              = 0;
 const string title                     = "\\$4C4" + Icons::ListOl + "\\$G Points And PBs";
 
 void Main() {
-    if (!PermissionsOkay) {
+    if (!GetPermissionsOkay()) {
         NotifyMissingPermissions();
         return;
     }
+
     startnew(MainLoop);
 }
 
-bool get_PermissionsOkay() {
-    return Permissions::ViewRecords();
-}
+UI::InputBlocking OnKeyPress(bool down, VirtualKey key) {
+    if (!down || !S_HotkeyEnabled)
+        return UI::InputBlocking::DoNothing;
 
-void NotifyMissingPermissions() {
-    UI::ShowNotification(
-        title,
-        "Missing permissions! D:\nYou probably don't have permission to view records/PBs.\nThis plugin won't do anything.",
-        vec4(1.0f, 0.4f, 0.1f, 0.3f),
-        10000
-    );
-    warn("Missing permissions! D:\nYou probably don't have permission to view records/PBs.\nThis plugin won't do anything.");
-}
+    if (key == S_Hotkey) {
+        if (!GetPlaygroundValidAndEditorNull() || SoloModeExitCheck())
+            return UI::InputBlocking::DoNothing;
 
-void MainLoop() {
-    // when current playground becomes not-null, get records
-    // when player count changes, get records
-    // when playground goes null, reset
-    while (PermissionsOkay) {
-        yield();
-
-        if (PlaygroundNotNullAndEditorNull && S_ShowWindow) {
-            startnew(UpdateRecords);
-            lastPbUpdate = Time::Now; // set this here to avoid triggering immediately
-
-            while (PlaygroundNotNullAndEditorNull && S_ShowWindow) {
-                yield();
-
-                if (g_PlayersInServerLast != GetPlayersInServerCount() || lastPbUpdate + 60000 < Time::Now) {
-                    g_PlayersInServerLast = GetPlayersInServerCount();
-                    startnew(UpdateRecords);
-                    lastPbUpdate = Time::Now; // bc we start it in a coro; don't want to run twice
-                }
-            }
-            g_Records.RemoveRange(0, g_Records.Length);
-        }
-
-        while (!PlaygroundNotNullAndEditorNull || !S_ShowWindow) yield();
+        S_ShowWindow = !S_ShowWindow;
+        UI::ShowNotification(Meta::ExecutingPlugin().Name, "Toggled visibility", vec4(0.1, 0.4, 0.8, 0.4));
+        return UI::InputBlocking::Block;
     }
+
+    return UI::InputBlocking::DoNothing;
 }
 
-bool get_PlaygroundNotNullAndEditorNull() {
-    return GetApp().CurrentPlayground !is null && GetApp().Editor is null;
+void Render() {
+    if (S_ShowWhenUIHidden && !UI::IsOverlayShown())
+        DrawUI();
 }
 
-// returns true if should exit because we're in solo mode
-bool SoloModeExitCheck() {
-    return S_HideInSoloMode && GetApp().PlaygroundScript !is null;
+void RenderInterface() {
+    DrawUI();
+}
+
+void RenderMenu() {
+    if (!GetPermissionsOkay())
+        return;
+
+    if (UI::MenuItem(title, "", S_ShowWindow))
+        S_ShowWindow = !S_ShowWindow;
 }
 
 void Update(float) {
     // checking this every frame has minimal overhead; <0.1ms
     if (!S_SkipMLFeedCheck && S_ShowWindow)
         CheckMLFeedForBetterTimes();
-}
-
-void UpdateRecords() {
-    lastPbUpdate = Time::Now;
-    PBTime@[] newPBs = GetPlayersPBs();
-
-    if (newPBs.Length > 0)  // empty arrays are returned on e.g., http error
-        g_Records = newPBs;
-}
-
-// fast enough to call once per frame
-uint get_LocalPlayersRank() {
-    // once per frame
-    if (lastLPR_Time + 5 > Time::Now)
-        return lastLPR_Rank;
-
-    // otherwise update
-    lastLPR_Time = Time::Now;
-    lastLPR_Rank = g_Records.Length;
-
-    for (uint i = 0; i < g_Records.Length; i++) {
-        if (g_Records[i].isLocalPlayer) {
-            lastLPR_Rank = i + 1;
-            break;
-        }
-    }
-
-    return lastLPR_Rank;
-}
-
-uint GetPlayersInServerCount() {
-    CTrackMania@ App = cast<CTrackMania@>(GetApp());
-
-    CSmArenaClient@ Playground = cast<CSmArenaClient@>(App.CurrentPlayground);
-    if (Playground is null)
-        return 0;
-
-    return Playground.Players.Length;
-}
-
-string GetLocalPlayerWSID() {
-    try {
-        return GetApp().Network.ClientManiaAppPlayground.LocalUser.WebServicesUserId;
-    } catch {
-        return "";
-    }
-}
-
-CSmPlayer@[]@ GetPlayersInServer() {
-    CTrackMania@ App = cast<CTrackMania@>(GetApp());
-
-    CSmArenaClient@ Playground = cast<CSmArenaClient@>(App.CurrentPlayground);
-    if (Playground is null)
-        return {};
-
-    CSmPlayer@[] ret;
-
-    for (uint i = 0; i < Playground.Players.Length; i++) {
-        CSmPlayer@ Player = cast<CSmPlayer@>(Playground.Players[i]);
-        if (Player !is null)
-            ret.InsertLast(Player);
-    }
-
-    return ret;
-}
-
-// Returns a sorted list of player PB time objects. This is assumed to be called only from UpdateRecords().
-PBTime@[] GetPlayersPBs() {
-    CTrackMania@ App = cast<CTrackMania@>(GetApp());
-    CTrackManiaNetwork@ Network = cast<CTrackManiaNetwork@>(App.Network);
-
-    CGameManiaAppPlayground@ CMAP = Network.ClientManiaAppPlayground;
-    if (CMAP is null)
-        return {};
-
-    if (CMAP.ScoreMgr is null || CMAP.UserMgr is null)
-        return {};
-
-    CSmPlayer@[]@ players = GetPlayersInServer();
-    if (players is null || players.Length == 0)
-        return {};
-
-    MwFastBuffer<wstring> playerWSIDs = MwFastBuffer<wstring>();
-    dictionary wsidToPlayer;
-
-    for (uint i = 0; i < players.Length; i++) {
-        playerWSIDs.Add(players[i].User.WebServicesUserId);
-        @wsidToPlayer[players[i].User.WebServicesUserId] = players[i];
-    }
-
-    g_CurrentlyLoadingRecords = true;
-    CWebServicesTaskResult_MapRecordListScript@ task = CMAP.ScoreMgr.Map_GetPlayerListRecordList(CMAP.UserMgr.Users[0].Id, playerWSIDs, GetApp().RootMap.MapInfo.MapUid, "PersonalBest", "", "", "");
-    while (task.IsProcessing)
-        yield();
-    g_CurrentlyLoadingRecords = false;
-
-    if (task.HasFailed || !task.HasSucceeded) {
-        warn("Requesting records failed. Type,Code,Desc: " + task.ErrorType + ", " + task.ErrorCode + ", " + task.ErrorDescription);
-        return {};
-    }
-
-    /* note:
-        - usually we expect `rl.MapRecordList.Length != players.Length`
-        - `players[i].User.WebServicesUserId != rl.MapRecordList[i].WebServicesUserId`
-       so we use a dictionary to look up the players (wsidToPlayer we set up earlier)
-    */
-
-    const string localWSID = GetLocalPlayerWSID();
-
-    PBTime@[] ret;
-    for (uint i = 0; i < task.MapRecordList.Length; i++) {
-        CMapRecord@ Record = task.MapRecordList[i];
-        CSmPlayer@ _p = cast<CSmPlayer@>(wsidToPlayer[Record.WebServicesUserId]);
-        if (_p is null) {
-            warn("Failed to lookup player from temp dict");
-            continue;
-        }
-        ret.InsertLast(PBTime(_p, Record, Record.WebServicesUserId == localWSID));
-        // remove the player so we can quickly get all players in server that don't have records
-        wsidToPlayer.Delete(Record.WebServicesUserId);
-    }
-
-    string[]@ playersWithoutPB = wsidToPlayer.GetKeys();
-
-    for (uint i = 0; i < playersWithoutPB.Length; i++) {
-        string wsid = playersWithoutPB[i];
-        CSmPlayer@ player = cast<CSmPlayer@>(wsidToPlayer[wsid]);
-
-        try {
-            // sometimes we get a null pointer exception here on player.User.WebServicesUserId
-            ret.InsertLast(PBTime(player, null));
-        } catch {
-            warn("Got exception updating records. Will retry in 500ms. Exception: " + getExceptionInfo());
-            startnew(RetryRecordsSoon);
-        }
-    }
-
-    ret.SortAsc();
-
-    return ret;
-}
-
-void RetryRecordsSoon() {
-    sleep(500);
-    UpdateRecords();
-}
-
-class PBTime {
-    string club;
-    bool   isLocalPlayer;
-    string name;
-    uint   time;
-    string timeStr;
-    string recordDate;
-    uint   recordTs;
-    string replayUrl;
-    string wsid;
-
-    PBTime(CSmPlayer@ _player, CMapRecord@ _rec, bool _isLocalPlayer = false) {
-        wsid = _player.User.WebServicesUserId;  // rare null pointer exception here? `Invalid address for member ID 03002000. This is likely a Nadeo bug! Setting it to null!`
-        name = _player.User.Name;
-        club = _player.User.ClubTag;
-        isLocalPlayer = _isLocalPlayer;
-
-        if (_rec !is null) {
-            time = _rec.Time;
-            replayUrl = _rec.ReplayUrl;
-            recordTs = _rec.Timestamp;
-        } else {
-            time = 0;
-            replayUrl = "";
-            recordTs = 0;
-        }
-
-        UpdateCachedStrings();
-    }
-
-    void UpdateCachedStrings() {
-        timeStr = time == 0 ? "???" : Time::Format(time);
-        recordDate = recordTs == 0 ? "??-??-?? ??:??" : Time::FormatString("%y-%m-%d %H:%M", recordTs);
-    }
-
-    int opCmp(PBTime@ other) const {
-        if (time == 0)
-            return (other.time == 0 ? 0 : 1);  // one or both PB unset
-
-        if (other.time == 0 || time < other.time)
-            return -1;
-
-        if (time == other.time)
-            return 0;
-
-        return 1;
-    }
 }
 
 void CheckMLFeedForBetterTimes() {
@@ -293,60 +83,28 @@ void CheckMLFeedForBetterTimes() {
         g_Records.SortAsc();
 }
 
-UI::InputBlocking OnKeyPress(bool down, VirtualKey key) {
-    if (!down || !S_HotkeyEnabled)
-        return UI::InputBlocking::DoNothing;
-
-    if (key == S_Hotkey) {
-        if (!PlaygroundNotNullAndEditorNull || SoloModeExitCheck())
-            return UI::InputBlocking::DoNothing;
-
-        S_ShowWindow = !S_ShowWindow;
-        UI::ShowNotification(Meta::ExecutingPlugin().Name, "Toggled visibility", vec4(0.1, 0.4, 0.8, 0.4));
-        return UI::InputBlocking::Block;
-    }
-
-    return UI::InputBlocking::DoNothing;
-}
-
-void RenderMenu() {
-    if (!PermissionsOkay)
-        return;
-
-    if (UI::MenuItem(title, "", S_ShowWindow))
-        S_ShowWindow = !S_ShowWindow;
-}
-
-void RenderInterface() {
-    DrawUI();
-}
-
-void Render() {
-    if (S_ShowWhenUIHidden && !UI::IsOverlayShown())
-        DrawUI();
-}
-
 void DrawUI() {
     if (
-        !PermissionsOkay
+        !GetPermissionsOkay()
         || !S_ShowWindow
         || SoloModeExitCheck()
-        || !PlaygroundNotNullAndEditorNull
+        || !GetPlaygroundValidAndEditorNull()
     )
         return;
 
     int uiFlags = UI::WindowFlags::NoCollapse;
     if (S_LockWhenUIHidden && !UI::IsOverlayShown())
-        uiFlags = uiFlags | UI::WindowFlags::NoInputs;
+        uiFlags |= UI::WindowFlags::NoInputs;
     bool showTitleBar = S_TitleBarWhenUnlocked && UI::IsOverlayShown();
     if (!showTitleBar)
-        uiFlags = uiFlags | UI::WindowFlags::NoTitleBar;
+        uiFlags |= UI::WindowFlags::NoTitleBar;
 
     UI::SetNextWindowSize(400, 400, UI::Cond::FirstUseEver);
+
     if (UI::Begin(title, S_ShowWindow, uiFlags)) {
-        if (GetApp().CurrentPlayground is null || GetApp().Editor !is null) {
+        if (GetApp().CurrentPlayground is null || GetApp().Editor !is null)
             UI::Text("Not in a map \\$999(or in editor).");
-        } else if (g_Records.IsEmpty())
+        else if (g_Records.IsEmpty())
             UI::Text(g_CurrentlyLoadingRecords ? "Loading..." : "No records :(");
         else {
             // put everything in a child so buttons work when interface is hidden
@@ -363,12 +121,12 @@ void DrawUI() {
                             startnew(UpdateRecords);
                     }
                     UI::SameLine();
-                    UI::SetCursorPos(curPos1 + vec2(80, 0));
+                    UI::SetCursorPos(curPos1 + vec2(80.0f, 0.0f));
                     uint nbPlayers = GetPlayersInServerCount();
-                    UI::Text("Your Rank: " + LocalPlayersRank + " / " + nbPlayers);
+                    UI::Text("Your Rank: " + GetLocalPlayersRank() + " / " + nbPlayers);
                     if (S_TopInfoMapName) {
                         UI::SameLine();
-                        UI::SetCursorPos(curPos1 + vec2(220, 0));
+                        UI::SetCursorPos(curPos1 + vec2(220.0f, 0.0f));
                         UI::Text(MakeColorsOkayDarkMode(ColoredString(GetApp().RootMap.MapName)));
                     }
                 }
@@ -452,4 +210,249 @@ void DrawUI() {
     }
 
     UI::End();
+}
+
+// fast enough to call once per frame
+uint GetLocalPlayersRank() {
+    // once per frame
+    if (lastLPR_Time + 5 > Time::Now)
+        return lastLPR_Rank;
+
+    // otherwise update
+    lastLPR_Time = Time::Now;
+    lastLPR_Rank = g_Records.Length;
+
+    for (uint i = 0; i < g_Records.Length; i++) {
+        if (g_Records[i].isLocalPlayer) {
+            lastLPR_Rank = i + 1;
+            break;
+        }
+    }
+
+    return lastLPR_Rank;
+}
+
+string GetLocalPlayerWSID() {
+    try {
+        return GetApp().Network.ClientManiaAppPlayground.LocalUser.WebServicesUserId;
+    } catch {
+        return "";
+    }
+}
+
+bool GetPermissionsOkay() {
+    return Permissions::ViewRecords();
+}
+
+// Returns a sorted list of player PB time objects. This is assumed to be called only from UpdateRecords().
+PBTime@[] GetPlayersPBs() {
+    CTrackMania@ App = cast<CTrackMania@>(GetApp());
+    CTrackManiaNetwork@ Network = cast<CTrackManiaNetwork@>(App.Network);
+
+    CGameManiaAppPlayground@ CMAP = Network.ClientManiaAppPlayground;
+    if (CMAP is null)
+        return {};
+
+    if (CMAP.ScoreMgr is null || CMAP.UserMgr is null)
+        return {};
+
+    CSmPlayer@[]@ players = GetPlayersInServer();
+    if (players is null || players.Length == 0)
+        return {};
+
+    MwFastBuffer<wstring> playerWSIDs = MwFastBuffer<wstring>();
+    dictionary wsidToPlayer;
+
+    for (uint i = 0; i < players.Length; i++) {
+        playerWSIDs.Add(players[i].User.WebServicesUserId);
+        @wsidToPlayer[players[i].User.WebServicesUserId] = players[i];
+    }
+
+    g_CurrentlyLoadingRecords = true;
+    CWebServicesTaskResult_MapRecordListScript@ task = CMAP.ScoreMgr.Map_GetPlayerListRecordList(CMAP.UserMgr.Users[0].Id, playerWSIDs, GetApp().RootMap.MapInfo.MapUid, "PersonalBest", "", "", "");
+    while (task.IsProcessing)
+        yield();
+    g_CurrentlyLoadingRecords = false;
+
+    if (task.HasFailed || !task.HasSucceeded) {
+        warn("Requesting records failed. Type,Code,Desc: " + task.ErrorType + ", " + task.ErrorCode + ", " + task.ErrorDescription);
+        return {};
+    }
+
+    /* note:
+        - usually we expect `rl.MapRecordList.Length != players.Length`
+        - `players[i].User.WebServicesUserId != rl.MapRecordList[i].WebServicesUserId`
+       so we use a dictionary to look up the players (wsidToPlayer we set up earlier)
+    */
+
+    const string localWSID = GetLocalPlayerWSID();
+
+    PBTime@[] ret;
+    for (uint i = 0; i < task.MapRecordList.Length; i++) {
+        CMapRecord@ Record = task.MapRecordList[i];
+        CSmPlayer@ _p = cast<CSmPlayer@>(wsidToPlayer[Record.WebServicesUserId]);
+        if (_p is null) {
+            warn("Failed to lookup player from temp dict");
+            continue;
+        }
+        ret.InsertLast(PBTime(_p, Record, Record.WebServicesUserId == localWSID));
+        // remove the player so we can quickly get all players in server that don't have records
+        wsidToPlayer.Delete(Record.WebServicesUserId);
+    }
+
+    string[]@ playersWithoutPB = wsidToPlayer.GetKeys();
+
+    for (uint i = 0; i < playersWithoutPB.Length; i++) {
+        string wsid = playersWithoutPB[i];
+        CSmPlayer@ player = cast<CSmPlayer@>(wsidToPlayer[wsid]);
+
+        try {
+            // sometimes we get a null pointer exception here on player.User.WebServicesUserId
+            ret.InsertLast(PBTime(player, null));
+        } catch {
+            warn("Got exception updating records. Will retry in 500ms. Exception: " + getExceptionInfo());
+            startnew(RetryRecordsSoon);
+        }
+    }
+
+    ret.SortAsc();
+
+    return ret;
+}
+
+uint GetPlayersInServerCount() {
+    CTrackMania@ App = cast<CTrackMania@>(GetApp());
+
+    CSmArenaClient@ Playground = cast<CSmArenaClient@>(App.CurrentPlayground);
+    if (Playground is null)
+        return 0;
+
+    return Playground.Players.Length;
+}
+
+bool GetPlaygroundValidAndEditorNull() {
+    CTrackMania@ App = cast<CTrackMania@>(GetApp());
+    return App.CurrentPlayground !is null && App.Editor is null;
+}
+
+CSmPlayer@[]@ GetPlayersInServer() {
+    CTrackMania@ App = cast<CTrackMania@>(GetApp());
+
+    CSmArenaClient@ Playground = cast<CSmArenaClient@>(App.CurrentPlayground);
+    if (Playground is null)
+        return {};
+
+    CSmPlayer@[] ret;
+
+    for (uint i = 0; i < Playground.Players.Length; i++) {
+        CSmPlayer@ Player = cast<CSmPlayer@>(Playground.Players[i]);
+        if (Player !is null)
+            ret.InsertLast(Player);
+    }
+
+    return ret;
+}
+
+void MainLoop() {
+    // when current playground becomes not-null, get records
+    // when player count changes, get records
+    // when playground goes null, reset
+    while (GetPermissionsOkay()) {
+        yield();
+
+        if (GetPlaygroundValidAndEditorNull() && S_ShowWindow) {
+            startnew(UpdateRecords);
+            lastPbUpdate = Time::Now; // set this here to avoid triggering immediately
+
+            while (GetPlaygroundValidAndEditorNull() && S_ShowWindow) {
+                yield();
+
+                if (g_PlayersInServerLast != GetPlayersInServerCount() || lastPbUpdate + 60000 < Time::Now) {
+                    g_PlayersInServerLast = GetPlayersInServerCount();
+                    startnew(UpdateRecords);
+                    lastPbUpdate = Time::Now; // bc we start it in a coro; don't want to run twice
+                }
+            }
+            g_Records.RemoveRange(0, g_Records.Length);
+        }
+
+        while (!GetPlaygroundValidAndEditorNull() || !S_ShowWindow) yield();
+    }
+}
+
+void NotifyMissingPermissions() {
+    UI::ShowNotification(
+        title,
+        "Missing permissions! D:\nYou probably don't have permission to view records/PBs.\nThis plugin won't do anything.",
+        vec4(1.0f, 0.4f, 0.1f, 0.3f),
+        10000
+    );
+    warn("Missing permissions! D:\nYou probably don't have permission to view records/PBs.\nThis plugin won't do anything.");
+}
+
+void RetryRecordsSoon() {
+    sleep(500);
+    UpdateRecords();
+}
+
+// returns true if should exit because we're in solo mode
+bool SoloModeExitCheck() {
+    return S_HideInSoloMode && GetApp().PlaygroundScript !is null;
+}
+
+void UpdateRecords() {
+    lastPbUpdate = Time::Now;
+    PBTime@[] newPBs = GetPlayersPBs();
+
+    if (newPBs.Length > 0)  // empty arrays are returned on e.g., http error
+        g_Records = newPBs;
+}
+
+class PBTime {
+    string club;
+    bool   isLocalPlayer;
+    string name;
+    uint   time;
+    string timeStr;
+    string recordDate;
+    uint   recordTs;
+    string replayUrl;
+    string wsid;
+
+    PBTime(CSmPlayer@ _player, CMapRecord@ _rec, bool _isLocalPlayer = false) {
+        wsid = _player.User.WebServicesUserId;  // rare null pointer exception here? `Invalid address for member ID 03002000. This is likely a Nadeo bug! Setting it to null!`
+        name = _player.User.Name;
+        club = _player.User.ClubTag;
+        isLocalPlayer = _isLocalPlayer;
+
+        if (_rec !is null) {
+            time = _rec.Time;
+            replayUrl = _rec.ReplayUrl;
+            recordTs = _rec.Timestamp;
+        } else {
+            time = 0;
+            replayUrl = "";
+            recordTs = 0;
+        }
+
+        UpdateCachedStrings();
+    }
+
+    void UpdateCachedStrings() {
+        timeStr = time == 0 ? "???" : Time::Format(time);
+        recordDate = recordTs == 0 ? "??-??-?? ??:??" : Time::FormatString("%y-%m-%d %H:%M", recordTs);
+    }
+
+    int opCmp(PBTime@ other) const {
+        if (time == 0)
+            return (other.time == 0 ? 0 : 1);  // one or both PB unset
+
+        if (other.time == 0 || time < other.time)
+            return -1;
+
+        if (time == other.time)
+            return 0;
+
+        return 1;
+    }
 }
