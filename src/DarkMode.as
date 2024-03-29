@@ -1,8 +1,9 @@
+// c 2024-03-29
+// m 2024-03-29
+
 // from https://github.com/XertroV/tm-cotd-hud/blob/422a1fc4be32b969de6a76355b3a2c03b5cc8034/src/Color.as
 
-// the entire point of this file is to provide `MakeColorsOkayDarkMode`
-
-
+const uint  asciiDollarSign = "$"[0];
 dictionary@ DARK_MODE_CACHE = dictionary();
 
 string MakeColorsOkayDarkMode(const string &in raw) {
@@ -42,12 +43,6 @@ string MakeColorsOkayDarkMode(const string &in raw) {
     return ret;
 }
 
-
-// rest of the code to make the above work:
-
-
-const uint asciiDollarSign = "$"[0];
-
 bool IsCharInt(int char) {
     return 48 <= char && char <= 57;
 }
@@ -73,7 +68,6 @@ uint8 HexCharToInt(int char) {
     throw("HexCharToInt got char with code " + char + " but that isn't 0-9 or a-f or A-F in ascii.");
     return 0;
 }
-
 
 enum ColorTy {
     RGB,
@@ -208,8 +202,6 @@ vec3 hslToRGB(vec3 hsl) {
     return vec3(r, g, b);
 }
 
-
-
 uint8 ToSingleHexCol(float v) {
     if (v < 0) { v = 0; }
     if (v > 15.9999) { v = 15.9999; }
@@ -249,8 +241,6 @@ vec3 hexTriToRgb(const string &in hexTri) {
     }
     return vec3();
 }
-
-
 
 class Color {
     ColorTy ty;
