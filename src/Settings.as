@@ -16,10 +16,13 @@ bool S_AutoSize = false;
 [Setting category="General" name="Show column headers"]
 bool S_Headers = true;
 
-[Setting category="General" name="Show rank"]
-bool S_Rank = false;
+[Setting category="General" name="Show placement #"]
+bool S_Ranks = false;
 
-[Setting category="General" name="Show club tags" description="slight performance impact"]
+[Setting category="General" name="Show Ranked division icons"]
+bool S_Div = true;
+
+[Setting category="General" name="Show club tags"]
 bool S_Clubs = true;
 
 [Setting category="General" name="Auto-size player name column"]
@@ -30,6 +33,12 @@ enum IconType {
     Real,
     Simple
 }
+
+[Setting category="General" name="Show Ranked teams"]
+bool S_Team = true;
+
+[Setting category="General" name="Show Ranked points"]
+bool S_Points = true;
 
 [Setting category="General" name="Medal icons"]
 IconType S_Medal = IconType::Simple;

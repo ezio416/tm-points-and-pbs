@@ -1,6 +1,7 @@
 // c 2024-03-29
 // m 2024-03-29
 
+bool           gettingRanks        = false;
 uint           lastPbUpdate        = 0;
 bool           loadingRecords      = false;
 vec2           iconOffset;
@@ -20,7 +21,7 @@ void Main() {
     iconSize   = vec2(1.2642f, 1.0f) * scale * 20.0f;
 
     LoadIconsMedals();
-    // LoadIconsRanked();
+    LoadIconsRanked();
     // LoadIconsRoyal();
 
     CTrackMania@ App = cast<CTrackMania@>(GetApp());
@@ -29,23 +30,28 @@ void Main() {
         yield();
 
         if (PlaygroundValidAndEditorNull() && S_Enabled) {
-            startnew(UpdateRecords);
-            lastPbUpdate = Time::Now;  // set this here to avoid triggering immediately
-
             while (PlaygroundValidAndEditorNull() && S_Enabled) {
                 yield();
 
-                int playersInServer = -1;
-
                 CSmArenaClient@ Playground = cast<CSmArenaClient@>(App.CurrentPlayground);
 
-                if (Playground !is null)
-                    playersInServer = int(Playground.Players.Length);
+                const int playersInServer = Playground is null ? 0 : Playground.Players.Length;
 
                 if (playersInServerLast != playersInServer || lastPbUpdate + 60000 < Time::Now) {
                     playersInServerLast = playersInServer;
-                    startnew(UpdateRecords);
-                    lastPbUpdate = Time::Now;  // bc we start it in a coro; don't want to run twice
+
+                    Meta::PluginCoroutine@ coro = startnew(UpdateRecords);
+                    while (coro.IsRunning())
+                        yield();
+
+                    CTrackManiaNetwork@ Network = cast<CTrackManiaNetwork@>(App.Network);
+                    CTrackManiaNetworkServerInfo@ ServerInfo = cast<CTrackManiaNetworkServerInfo@>(Network.ServerInfo);
+
+                    if (ServerInfo.CurGameModeStr == "TM_Teams_Matchmaking_Online") {
+                        @coro = startnew(GetPlayerMMRanks);
+                        while (coro.IsRunning())
+                            yield();
+                    }
                 }
             }
 
@@ -65,6 +71,12 @@ void Main() {
 void Render() {
     playerColumnWidth = 0.0f;
 
+    CTrackMania@ App = cast<CTrackMania@>(GetApp());
+    CTrackManiaNetwork@ Network = cast<CTrackManiaNetwork@>(App.Network);
+    CTrackManiaNetworkServerInfo@ ServerInfo = cast<CTrackManiaNetworkServerInfo@>(Network.ServerInfo);
+
+    const bool inRanked = ServerInfo.CurGameModeStr == "TM_Teams_Matchmaking_Online";
+
     if (S_Enabled) {
         const MLFeed::RaceDataProxy@ raceData = MLFeed::GetRaceData();
 
@@ -72,19 +84,19 @@ void Render() {
             bool foundBetter = false;
 
             for (uint i = 0; i < records.Length; i++) {
-                PBTime@ pbTime = records[i];
+                PBTime@ player = records[i];
 
-                playerColumnWidth = Math::Max(playerColumnWidth, Draw::MeasureString(pbTime.name).x);
+                playerColumnWidth = Math::Max(playerColumnWidth, Draw::MeasureString((inRanked && S_Team ? Icons::Circle + " " : "") + player.name).x);
 
-                const MLFeed::PlayerCpInfo@ player = raceData.GetPlayer(pbTime.name);
-                if (player is null || player.bestTime < 1)
+                const MLFeed::PlayerCpInfo@ cpInfo = raceData.GetPlayer(player.name);
+                if (cpInfo is null || cpInfo.bestTime < 1)
                     continue;
 
-                pbTime.sessionPb = player.bestTime;
+                player.sessionPB = cpInfo.bestTime;
 
-                if (pbTime.sessionPb < pbTime.time || pbTime.time == 0) {
-                    pbTime.time = pbTime.sessionPb;
-                    pbTime.recordTs = Time::Stamp;
+                if (player.sessionPB < player.time || player.time == 0) {
+                    player.time = player.sessionPB;
+                    player.recordTs = Time::Stamp;
                     foundBetter = true;
                 }
             }
@@ -93,8 +105,6 @@ void Render() {
                 records.SortAsc();
         }
     }
-
-    CTrackMania@ App = cast<CTrackMania@>(GetApp());
 
     if (
         !S_Enabled
@@ -123,23 +133,27 @@ void Render() {
             UI::Text(loadingRecords ? "Loading..." : "No records :(");
         else {
             uint nbCols = 2;
-            if (S_Rank)      nbCols++;
-            if (S_Clubs)     nbCols++;
-            if (S_Dates)     nbCols++;
-            if (S_SessionPB) nbCols++;
+            if (S_Ranks)              nbCols++;
+            if (S_Div)                nbCols++;
+            if (S_Clubs)              nbCols++;
+            if (inRanked && S_Points) nbCols++;
+            if (S_Dates)              nbCols++;
+            if (S_SessionPB)          nbCols++;
 
             UI::PushStyleColor(UI::Col::TableBorderLight, S_ColSepColor);  // should be UI::Col:Separator?
 
             if (UI::BeginTable("local-players-records", nbCols, UI::TableFlags::ScrollY | UI::TableFlags::Resizable)) {
                 UI::TableSetupScrollFreeze(0, 1);
-                if (S_Rank)  UI::TableSetupColumn("#",    UI::TableColumnFlags::NoResize | UI::TableColumnFlags::WidthFixed, scale * 20.0f);
-                if (S_Clubs) UI::TableSetupColumn("Club", UI::TableColumnFlags::NoResize | UI::TableColumnFlags::WidthFixed, scale * 50.0f);
+                if (S_Ranks)           UI::TableSetupColumn("#",    UI::TableColumnFlags::NoResize | UI::TableColumnFlags::WidthFixed, scale * 20.0f);
+                if (inRanked && S_Div) UI::TableSetupColumn("Div",  UI::TableColumnFlags::NoResize | UI::TableColumnFlags::WidthFixed, scale * 30.0f);
+                if (S_Clubs)           UI::TableSetupColumn("Club", UI::TableColumnFlags::NoResize | UI::TableColumnFlags::WidthFixed, scale * 50.0f);
 
                 if (S_AutoPlayerCol)
                     UI::TableSetupColumn("Player", UI::TableColumnFlags::NoResize | UI::TableColumnFlags::WidthFixed, playerColumnWidth);
                 else
                     UI::TableSetupColumn("Player", UI::TableColumnFlags::NoResize);
 
+                if (S_Points)    UI::TableSetupColumn("Pts",     UI::TableColumnFlags::NoResize | UI::TableColumnFlags::WidthFixed, scale * 20.0f);
                                  UI::TableSetupColumn("PB Time", UI::TableColumnFlags::NoResize | UI::TableColumnFlags::WidthFixed, scale * 80.0f);
                 if (S_Dates)     UI::TableSetupColumn("PB Date", UI::TableColumnFlags::NoResize | UI::TableColumnFlags::WidthFixed, scale * 75.0f);
                 if (S_SessionPB) UI::TableSetupColumn("Session", UI::TableColumnFlags::NoResize | UI::TableColumnFlags::WidthFixed, scale * 80.0f);
@@ -148,42 +162,58 @@ void Render() {
                 UI::ListClipper clipper(records.Length);
                 while (clipper.Step()) {
                     for (int i = clipper.DisplayStart; i < clipper.DisplayEnd; i++) {
-                        PBTime@ pb = records[i];
+                        PBTime@ player = records[i];
                         UI::TableNextRow();
 
-                        const bool shouldHighlight = S_HIghlightRecent && pb.recordTs + 60 > uint(Time::Stamp);
+                        const bool shouldHighlight = S_HIghlightRecent && player.recordTs + 60 > uint(Time::Stamp);
                         if (shouldHighlight) {
-                            const float hlAmount = 1.0f - Math::Clamp(float(int(Time::Stamp) - int(pb.recordTs)) / 60.0f, 0.0f, 1.0f);
+                            const float hlAmount = 1.0f - Math::Clamp(float(int(Time::Stamp) - int(player.recordTs)) / 60.0f, 0.0f, 1.0f);
                             UI::PushStyleColor(UI::Col::Text, S_HighlightColor * hlAmount + vec4(1.0f, 1.0f, 1.0f, 1.0f) * (1.0f - hlAmount));
                         }
 
-                        if (S_Rank) {
+                        if (S_Ranks) {
                             UI::TableNextColumn();
                             UI::Text(tostring(i + 1) + ".");
                         }
 
+                        if (inRanked && S_Div) {
+                            UI::TableNextColumn();
+                            UI::Texture@ icon = player.divisionIcon;
+                            if (icon !is null)
+                                UI::Image(icon, iconSize);
+                            else
+                                UI::Dummy(iconSize);
+                        }
+
                         if (S_Clubs) {
                             UI::TableNextColumn();
-                            if (pb.club.Length > 0)
-                                UI::Text(ColoredString(pb.club));
+                            if (player.club.Length > 0)
+                                UI::Text(ColoredString(player.club));
                         }
 
                         UI::TableNextColumn();
-                        UI::Text(pb.name);
+                        const uint team = player.score !is null ? player.score.TeamNum : 0;
+                        const string color = team == 2 ? "\\$E22" : team == 1 ? "\\$37F" : "\\$888";
+                        UI::Text((inRanked && S_Team ? (color + Icons::Circle + "\\$G ") : "") + player.name);
+
+                        if (inRanked && S_Points) {
+                            UI::TableNextColumn();
+                            UI::Text(tostring(player.score !is null ? player.score.Points : 0));
+                        }
 
                         UI::TableNextColumn();
-                        UI::Text(pb.time > 0 ? Time::Format(pb.time) : "");
+                        UI::Text(player.time > 0 ? Time::Format(player.time) : "");
                         if (S_Medal != IconType::None) {
                             uint medal = 0;
 
-                            if (pb.time > 0) {
-                                if (pb.time < authorTime)
+                            if (player.time > 0) {
+                                if (player.time < authorTime)
                                     medal = 4;
-                                else if (pb.time < goldTime)
+                                else if (player.time < goldTime)
                                     medal = 3;
-                                else if (pb.time < silverTime)
+                                else if (player.time < silverTime)
                                     medal = 2;
-                                else if (pb.time < bronzeTime)
+                                else if (player.time < bronzeTime)
                                     medal = 1;
                             }
 
@@ -199,30 +229,30 @@ void Render() {
                                     UI::Dummy(iconSize);
                             } else {
                                 UI::SetCursorPos(UI::GetCursorPos() - vec2(iconOffset.x * 0.5f, iconOffset.y * -0.5f));
-                                UI::Text(pb.time > 0 ? medalColors[medal] + Icons::Circle : "");
+                                UI::Text(player.time > 0 ? medalColors[medal] + Icons::Circle : "");
                             }
                         }
 
                         if (S_Dates) {
                             UI::TableNextColumn();
-                            UI::Text(pb.recordTs > 0 ? Time::FormatString("%m-%d %H:%M", pb.recordTs) : "");
+                            UI::Text(player.recordTs > 0 ? Time::FormatString("%m-%d %H:%M", player.recordTs) : "");
                         }
 
                         if (S_SessionPB) {
                             UI::TableNextColumn();
-                            UI::Text(pb.sessionPb > 0 ? Time::Format(pb.sessionPb) : "");
+                            UI::Text(player.sessionPB > 0 ? Time::Format(player.sessionPB) : "");
 
                             if (S_Medal != IconType::None) {
                                 uint medal = 0;
 
-                                if (pb.sessionPb > 0) {
-                                    if (pb.sessionPb < authorTime)
+                                if (player.sessionPB > 0) {
+                                    if (player.sessionPB < authorTime)
                                         medal = 4;
-                                    else if (pb.sessionPb < goldTime)
+                                    else if (player.sessionPB < goldTime)
                                         medal = 3;
-                                    else if (pb.sessionPb < silverTime)
+                                    else if (player.sessionPB < silverTime)
                                         medal = 2;
-                                    else if (pb.sessionPb < bronzeTime)
+                                    else if (player.sessionPB < bronzeTime)
                                         medal = 1;
                                 }
 
@@ -238,7 +268,7 @@ void Render() {
                                         UI::Dummy(iconSize);
                                 } else {
                                     UI::SetCursorPos(UI::GetCursorPos() - vec2(iconOffset.x * 0.5f, iconOffset.y * -0.5f));
-                                    UI::Text(pb.sessionPb > 0 ? medalColors[medal] + Icons::Circle : "");
+                                    UI::Text(player.sessionPB > 0 ? medalColors[medal] + Icons::Circle : "");
                                 }
                             }
                         }
@@ -271,6 +301,99 @@ UI::Texture@ GetIconMedal(const uint medal) {
         return iconsMedals[medal];
 
     return null;
+}
+
+void GetPlayerMMRanks() {
+    while (gettingRanks)
+        yield();
+
+    gettingRanks = true;
+
+    trace("getting players' MM ranks");
+
+    dictionary@ pbTimes = dictionary();
+
+    if (records.Length == 0) {
+        warn("no records");
+        gettingRanks = false;
+        return;
+    }
+
+    for (uint i = 0; i < records.Length; i++)
+        pbTimes[records[i].accountId] = @records[i];
+
+    sleep(500);
+
+    while (!NadeoServices::IsAuthenticated("NadeoLiveServices"))
+        yield();
+
+    Net::HttpRequest@ req = NadeoServices::Get(
+        "NadeoLiveServices",
+        "https://meet.trackmania.nadeo.club/api/matchmaking/2/leaderboard/players?players[]=" + string::Join(pbTimes.GetKeys(), "&players[]=")
+    );
+    req.Start();
+    while (!req.Finished())
+        yield();
+
+    const int code = req.ResponseCode();
+    const string text = req.String();
+
+    if (code != 200) {
+        warn("bad API response (" + code + "): " + text + " | " + req.Error());
+        gettingRanks = false;
+        return;
+    }
+
+    Json::Value@ loaded = Json::Parse(text);
+
+    Json::Type type = loaded.GetType();
+    if (type != Json::Type::Object) {
+        warn("bad JSON type (loaded): " + tostring(type));
+        gettingRanks = false;
+        return;
+    }
+
+    if (!loaded.HasKey("results")) {
+        warn("JSON response missing key 'results'");
+        gettingRanks = false;
+        return;
+    }
+
+    Json::Value@ results = loaded["results"];
+
+    type = results.GetType();
+    if (type != Json::Type::Array) {
+        warn("bad JSON type (results): " + tostring(type));
+        gettingRanks = false;
+        return;
+    }
+
+    if (results.Length == 0) {
+        warn("no results");
+        gettingRanks = false;
+        return;
+    }
+
+    for (uint i = 0; i < results.Length; i++) {
+        Json::Value@ result = results[i];
+
+        if (!result.HasKey("player") || !result.HasKey("score")) {
+            warn("missing key 'player' or 'score'");
+            continue;
+        }
+
+        PBTime@ record = cast<PBTime@>(pbTimes[result["player"]]);
+        if (record is null) {
+            warn("null record");
+            continue;
+        }
+
+        record.mmPoints = result["score"];
+    }
+
+    trace("got players' MM ranks");
+
+    gettingRanks = false;
 }
 
 void LoadIconsMedals() {
@@ -428,19 +551,27 @@ void UpdateRecords() {
 }
 
 class PBTime {
-    string club;
-    string name;
-    uint   sessionPb = 0;
-    uint   time      = 0;
-    uint   recordTs  = 0;
-    string wsid;
+    string         accountId;
+    string         club;
+    uint           mmPoints  = 0;
+    string         name;
+    CSmArenaScore@ score;
+    uint           sessionPB = 0;
+    uint           time      = 0;
+    uint           recordTs  = 0;
 
     PBTime() { }
-    PBTime(CSmPlayer@ Player, CMapRecord@ Record) {
-        if (Player.User !is null) {
-            wsid = Player.User.WebServicesUserId;  // rare null pointer exception here? `Invalid address for member ID 03002000. This is likely a Nadeo bug! Setting it to null!`
-            name = Player.User.Name;
-            club = Player.User.ClubTag;
+    PBTime(CSmPlayer@ player, CMapRecord@ Record) {
+        if (player is null)
+            return;
+
+        if (player.Score !is null)
+            @score = player.Score;
+
+        if (player.User !is null) {
+            accountId = player.User.WebServicesUserId;  // rare null pointer exception here? `Invalid address for member ID 03002000. This is likely a Nadeo bug! Setting it to null!`
+            club      = player.User.ClubTag;
+            name      = player.User.Name;
         }
 
         if (Record !is null) {
@@ -460,5 +591,31 @@ class PBTime {
             return 0;
 
         return 1;
+    }
+
+    uint get_division() {
+        if (mmPoints == 0)   return 0;   // none
+        if (mmPoints < 300)  return 1;   // b1
+        if (mmPoints < 600)  return 2;   // b2
+        if (mmPoints < 1000) return 3;   // b3
+        if (mmPoints < 1300) return 4;   // s1
+        if (mmPoints < 1600) return 5;   // s2
+        if (mmPoints < 2000) return 6;   // s3
+        if (mmPoints < 2300) return 7;   // g1
+        if (mmPoints < 2600) return 8;   // g2
+        if (mmPoints < 3000) return 9;   // g3
+        if (mmPoints < 3300) return 10;  // m1
+        if (mmPoints < 3600) return 11;  // m2
+        if (mmPoints < 4000) return 12;  // m3
+        return 13;  // tm
+    }
+
+    UI::Texture@ get_divisionIcon() {
+        const uint div = division;
+
+        if (div < iconsRanked.Length)
+            return iconsRanked[div];
+
+        return null;
     }
 }
