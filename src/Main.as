@@ -1,5 +1,5 @@
 // c 2024-03-29
-// m 2024-03-29
+// m 2024-03-30
 
 bool           gettingRanks        = false;
 uint           lastPbUpdate        = 0;
@@ -134,7 +134,7 @@ void Render() {
         else {
             uint nbCols = 2;
             if (S_Ranks)              nbCols++;
-            if (S_Div)                nbCols++;
+            if (inRanked && S_Div)    nbCols++;
             if (S_Clubs)              nbCols++;
             if (inRanked && S_Points) nbCols++;
             if (S_Dates)              nbCols++;
@@ -153,11 +153,11 @@ void Render() {
                 else
                     UI::TableSetupColumn("Player", UI::TableColumnFlags::NoResize);
 
-                if (S_Points)    UI::TableSetupColumn("Pts",     UI::TableColumnFlags::NoResize | UI::TableColumnFlags::WidthFixed, scale * 20.0f);
-                                 UI::TableSetupColumn("PB Time", UI::TableColumnFlags::NoResize | UI::TableColumnFlags::WidthFixed, scale * 80.0f);
-                if (S_Dates)     UI::TableSetupColumn("PB Date", UI::TableColumnFlags::NoResize | UI::TableColumnFlags::WidthFixed, scale * 75.0f);
-                if (S_SessionPB) UI::TableSetupColumn("Session", UI::TableColumnFlags::NoResize | UI::TableColumnFlags::WidthFixed, scale * 80.0f);
-                if (S_Headers)   UI::TableHeadersRow();
+                if (inRanked && S_Points) UI::TableSetupColumn("Pts",     UI::TableColumnFlags::NoResize | UI::TableColumnFlags::WidthFixed, scale * 20.0f);
+                                          UI::TableSetupColumn("PB Time", UI::TableColumnFlags::NoResize | UI::TableColumnFlags::WidthFixed, scale * 80.0f);
+                if (S_Dates)              UI::TableSetupColumn("PB Date", UI::TableColumnFlags::NoResize | UI::TableColumnFlags::WidthFixed, scale * 75.0f);
+                if (S_SessionPB)          UI::TableSetupColumn("Session", UI::TableColumnFlags::NoResize | UI::TableColumnFlags::WidthFixed, scale * 80.0f);
+                if (S_Headers)            UI::TableHeadersRow();
 
                 UI::ListClipper clipper(records.Length);
                 while (clipper.Step()) {
