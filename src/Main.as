@@ -246,13 +246,13 @@ void Render() {
                                 uint medal = 0;
 
                                 if (player.sessionPB > 0) {
-                                    if (player.sessionPB < authorTime)
+                                    if (player.sessionPB <= authorTime)
                                         medal = 4;
-                                    else if (player.sessionPB < goldTime)
+                                    else if (player.sessionPB <= goldTime)
                                         medal = 3;
-                                    else if (player.sessionPB < silverTime)
+                                    else if (player.sessionPB <= silverTime)
                                         medal = 2;
-                                    else if (player.sessionPB < bronzeTime)
+                                    else if (player.sessionPB <= bronzeTime)
                                         medal = 1;
                                 }
 
