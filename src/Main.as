@@ -1,5 +1,5 @@
 // c 2024-03-29
-// m 2024-03-30
+// m 2024-04-02
 
 bool           gettingRanks        = false;
 uint           lastPbUpdate        = 0;
@@ -207,13 +207,13 @@ void Render() {
                             uint medal = 0;
 
                             if (player.time > 0) {
-                                if (player.time < authorTime)
+                                if (player.time <= authorTime)
                                     medal = 4;
-                                else if (player.time < goldTime)
+                                else if (player.time <= goldTime)
                                     medal = 3;
-                                else if (player.time < silverTime)
+                                else if (player.time <= silverTime)
                                     medal = 2;
-                                else if (player.time < bronzeTime)
+                                else if (player.time <= bronzeTime)
                                     medal = 1;
                             }
 
